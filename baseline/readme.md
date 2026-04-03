@@ -8,3 +8,15 @@ Among all noise types, multi-speaker noise has the most significant impact. At 0
 In contrast, stationary and non-stationary noise result in relatively minor degradation, even at lower SNR levels. This indicates that the model is capable of filtering out noise that does not share speech-like characteristics.
 
 Overall, these results demonstrate that speech-like interference is the primary challenge for robust speech recognition systems.
+
+## Code Structure
+
+This folder contains baseline evaluation scripts for analyzing the performance of a pretrained ASR model (wav2vec2) under clean and noisy conditions. It includes simple tests, noise robustness comparisons, and systematic SNR analysis.
+
+- `test_asr.py`: Runs basic ASR inference on clean LibriSpeech samples using a pretrained wav2vec2 model. This script verifies the pipeline and provides a clean baseline CER for comparison.
+
+- `test_clean_vs_noise.py`: Evaluates ASR performance on a single clean audio sample and its noisy versions (stationary, non-stationary, and multi-speaker noise) at a fixed SNR level. This script demonstrates how different noise types affect recognition.
+
+- `batch_noise_test.py`: Performs batch evaluation on multiple samples to compare ASR performance across clean and different noise types at a fixed SNR (10 dB). Outputs average CER and generates a bar chart for comparison.
+
+- `snr_analysis.py`: Conducts systematic evaluation of ASR performance under different noise types and SNR levels (20, 10, 0 dB). Computes average CER, saves results to JSON, and generates performance curves.
