@@ -20,3 +20,25 @@ This folder contains baseline evaluation scripts for analyzing the performance o
 - `batch_noise_test.py`: Performs batch evaluation on multiple samples to compare ASR performance across clean and different noise types at a fixed SNR (10 dB). Outputs average CER and generates a bar chart for comparison.
 
 - `snr_analysis.py`: Conducts systematic evaluation of ASR performance under different noise types and SNR levels (20, 10, 0 dB). Computes average CER, saves results to JSON, and generates performance curves.
+
+## Self-Train Model
+
+This folder contains scripts for fine-tuning the pretrained wav2vec2 model and evaluating the trained models under different noise conditions.
+
+- `train_clean_baseline.py`: Fine-tunes the model on clean LibriSpeech data to obtain a clean-only baseline model.
+
+- `train_multispeaker_baseline.py`: Fine-tunes the model on speech mixed with multi-speaker (babble) noise at 10 dB to improve robustness under speech-like interference.
+
+- `test_trained_clean_baseline.py`: Evaluates the clean-trained model on clean and noisy data (stationary, non-stationary, and multi-speaker noise) at 10 dB.
+
+- `test_multispeaker_trained_model.py`: Evaluates the multi-speaker-trained model under the same conditions to compare robustness improvements.
+
+## Figures
+
+This folder contains visualization and result files generated from baseline experiments.
+
+- `cer_comparison.png`: Bar chart comparing ASR performance across noise types at 10 dB.
+
+- `snr_analysis.png`: Line plot showing CER trends across different SNR levels for each noise type.
+
+- `snr_results.json`: Numerical results used for plotting SNR analysis.
