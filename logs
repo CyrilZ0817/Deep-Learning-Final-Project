@@ -1,1 +1,66 @@
+## 1. Large Dataset Download Problem
+﻿
+### Problem
+Running scripts triggered large downloads (10GB+), including:
+- train.100
+- train.360
+- .parquet files
+﻿
+### Cause
+Using:
+load_dataset("librispeech_asr", "clean", ...)
+downloads full dataset shards instead of only requested samples.
+﻿
+### Solution
+Replaced with streaming mode:
+load_dataset(..., streaming=True)
+﻿
+### Status
 
+
+## 2. Audio Data Format Error
+﻿
+### Problem
+TypeError: 'AudioDecoder' object is not subscriptable
+﻿
+### Cause
+Code assumed audio format:
+audio["bytes"]
+﻿
+But actual returned type:
+AudioDecoder object (from datasets library)
+﻿
+### Solution
+Used:
+dataset.cast_column("audio", Audio(decode=False))
+﻿
+to restore original bytes/path format.
+﻿
+### Status
+
+
+## 3. Missing Trained Model Files
+﻿
+### Problem
+Scripts expect:
+./wav2vec2-multispeaker-10db
+﻿
+but directory does not exist.
+﻿
+### Cause
+Project includes training scripts but not saved model checkpoints.
+﻿
+### Impact
+Cannot run:
+- test_multispeaker_trained_model.py
+- test_trained_clean_baseline.py
+﻿
+### Solution
+Need to:
+- obtain trained model from teammates  
+OR  
+- run training scripts to generate model
+﻿
+### Status
+
+﻿
