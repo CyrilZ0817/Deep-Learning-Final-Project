@@ -11,31 +11,30 @@ dataset:
 
 training:
   seed: 42
-  noise:
-    dir: "./noises"
-    types:
-      baseline:
-        output_dir: "./baseline"
-      static:
-        subfolder: "static"
-        snr_range:
-          min: 0
-          max: 20 
-        output_dir: "./static"
-      complex:
-        subfolder: "complex"
-        snr_range:
-          min: 5
-          max: 25
-        output_dir: "./complex"
-      babble:
-        subfolder: "babble"
-        snr_range:
-          min: 10
-          max: 30
-        output_dir: "./babble"
-      all:
-        output_dir: "./all"
+  data_base_dir: "./noises"
+  types:
+    baseline:
+      output_dir: "./baseline"
+    static:
+      subfolder: "static"
+      snr_range:
+        min: 0
+        max: 20 
+      output_dir: "./static"
+    complex:
+      subfolder: "complex"
+      snr_range:
+        min: 5
+        max: 25
+      output_dir: "./complex"
+    babble:
+      subfolder: "babble"
+      snr_range:
+        min: 10
+        max: 30
+      output_dir: "./babble"
+    all:
+      output_dir: "./all"
   
   apply_augmentation: true
   per_device_train_batch_size: 2

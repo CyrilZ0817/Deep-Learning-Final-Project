@@ -21,6 +21,8 @@ from jiwer import cer
 with open("config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
+ACTIVE_TYPE = "baseline"  
+
 # --- LOAD DATASET ---
 train_dataset = load_dataset(
     config["dataset"]["name"], 
@@ -113,7 +115,7 @@ model = Wav2Vec2ForCTC.from_pretrained(
 model.freeze_feature_encoder()
 
 training_args = TrainingArguments(
-    output_dir=config["training"]["output_dir"],
+    output_dir= config["training"]["types"][ACTIVE_TYPE]["output_dir"],
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     per_device_eval_batch_size=config["training"]["per_device_eval_batch_size"],
     num_train_epochs=config["training"]["num_train_epochs"],
@@ -145,5 +147,5 @@ trainer.train()
 metrics = trainer.evaluate()
 print(f"\nFinal evaluation: {metrics}")
 
-trainer.save_model(config["training"]["output_dir"])
-processor.save_pretrained(config["training"]["output_dir"])
+trainer.save_model(config["training"]["types"][ACTIVE_TYPE]["output_dir"])
+processor.save_pretrained(config["training"]["types"][ACTIVE_TYPE]["output_dir"])

@@ -22,6 +22,7 @@ from jiwer import cer
 # --- LOAD CONFIG ---
 with open("config.yaml", "r") as f:
     config = yaml.safe_load(f)
+ACTIVE_TYPE = "babble"
 
 # --- LOAD DATASET ---
 train_dataset = load_dataset(
@@ -104,12 +105,11 @@ def mix(clean, noise, snr_db):
 
 
 # 5. preload noises
-active_type = "babble"
-profile = config["noise"]["types"][active_type]
+profile = config["noise"]["types"][ACTIVE_TYPE]
 subfolder = profile["subfolder"]
 snr_min = profile["snr_range"]["min"]
 snr_max = profile["snr_range"]["max"]
-noise_dir = os.path.join(config["noise"]["base_dir"], subfolder)
+noise_dir = os.path.join(config["training"]["data_base_dir"], subfolder)
 loaded_noises = {}
 # Check if the directory exists
 if not os.path.exists(noise_dir):
@@ -132,7 +132,7 @@ for filename in os.listdir(noise_dir):
     try:
         # Assuming load_noise is defined elsewhere in your script
         loaded_noises[noise_name] = load_noise(noise_path)
-        print(f"Loaded {active_type} noise: {noise_name} from {filename}")
+        print(f"Loaded {ACTIVE_TYPE} noise: {noise_name} from {filename}")
     except Exception as e:
         print(f"Warning: failed to load noise file {noise_path}: {e}")
 
@@ -141,7 +141,7 @@ if len(loaded_noises) == 0:
     raise RuntimeError(f"No valid noise files were loaded from {noise_dir}. Check your folder!")
 
 available_noise_names = list(loaded_noises.keys())
-print(f"--- Successfully loaded {len(available_noise_names)} {active_type} noises ---")
+print(f"--- Successfully loaded {len(available_noise_names)} {ACTIVE_TYPE} noises ---")
 
 
 def load_audio_from_record(batch):
@@ -290,7 +290,7 @@ model.freeze_feature_encoder()
 # 11. training args
 
 training_args = TrainingArguments(
-    output_dir=config["training"]["output_dir"],
+    output_dir= config["training"]["types"][ACTIVE_TYPE]["output_dir"],
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     per_device_eval_batch_size=config["training"]["per_device_eval_batch_size"],
     num_train_epochs=config["training"]["num_train_epochs"],
@@ -322,5 +322,5 @@ trainer.train()
 metrics = trainer.evaluate()
 print(f"\nFinal evaluation: {metrics}")
 
-trainer.save_model(config["training"]["output_dir"])
-processor.save_pretrained(config["training"]["output_dir"])
+trainer.save_model(config["training"]["types"][ACTIVE_TYPE]["output_dir"])
+processor.save_pretrained(config["training"]["types"][ACTIVE_TYPE]["output_dir"])

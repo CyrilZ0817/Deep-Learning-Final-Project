@@ -22,6 +22,7 @@ from jiwer import cer
 # --- LOAD CONFIG ---
 with open("config.yaml", "r") as f:
     config = yaml.safe_load(f)
+ACTIVE_TYPE = "mixed" 
 
 # --- LOAD DATASET ---
 train_dataset = load_dataset(
@@ -111,9 +112,9 @@ all_types = config["noise"]["types"]
 print(f"--- Starting bulk load for ALL noise types ---")
 
 # Iterate through every noise type defined in the config (env, social, speech, etc.)
-for noise_type, type in all_types.items():
-    subfolder = type["subfolder"]
-    noise_dir = os.path.join(config["noise"]["base_dir"], subfolder)
+for noise_type, p in all_types.items():
+    subfolder = p["subfolder"]
+    noise_dir = os.path.join(config["training"]["data_base_dir"], subfolder)
     
     # Check if the directory exists for this specific type
     if not os.path.exists(noise_dir):
@@ -315,7 +316,7 @@ model.freeze_feature_encoder()
 # 11. training args
 
 training_args = TrainingArguments(
-    output_dir=config["training"]["output_dir"],
+    output_dir= config["training"]["types"][ACTIVE_TYPE]["output_dir"],
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     per_device_eval_batch_size=config["training"]["per_device_eval_batch_size"],
     num_train_epochs=config["training"]["num_train_epochs"],
@@ -347,5 +348,5 @@ trainer.train()
 metrics = trainer.evaluate()
 print(f"\nFinal evaluation: {metrics}")
 
-trainer.save_model(config["training"]["output_dir"])
-processor.save_pretrained(config["training"]["output_dir"])
+trainer.save_model(config["training"]["types"][ACTIVE_TYPE]["output_dir"])
+processor.save_pretrained(config["training"]["types"][ACTIVE_TYPE]["output_dir"])
