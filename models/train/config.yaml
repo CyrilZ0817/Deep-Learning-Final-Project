@@ -1,0 +1,48 @@
+model:
+  name: "facebook/wav2vec2-base-960h"
+  ctc_loss_reduction: "mean"
+
+dataset:
+  name: "librispeech_asr"
+  subset: "clean"
+  train_split: "train.100[:1%]"
+  valid_split: "validation[:1%]"
+  target_sampling_rate: 16000
+
+training:
+  seed: 42
+  noise:
+    dir: "./noises"
+    types:
+      baseline:
+        output_dir: "./baseline"
+      static:
+        subfolder: "static"
+        snr_range:
+          min: 0
+          max: 20 
+        output_dir: "./static"
+      complex:
+        subfolder: "complex"
+        snr_range:
+          min: 5
+          max: 25
+        output_dir: "./complex"
+      babble:
+        subfolder: "babble"
+        snr_range:
+          min: 10
+          max: 30
+        output_dir: "./babble"
+      all:
+        output_dir: "./all"
+  
+  apply_augmentation: true
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  num_train_epochs: 2
+  learning_rate: 0.0001 # 1e-4
+  warmup_steps: 10
+  logging_steps: 10
+  save_total_limit: 2
+  metric_for_best_model: "cer"
