@@ -96,7 +96,7 @@ def mix(clean, noise, snr_db):
 
 
 # 5. preload noises
-profile = config["noise"]["types"][ACTIVE_TYPE]
+profile = config["training"]["types"][ACTIVE_TYPE]
 subfolder = profile["subfolder"]
 snr_min = profile["snr_range"]["min"]
 snr_max = profile["snr_range"]["max"]
