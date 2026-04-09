@@ -11,39 +11,38 @@ dataset:
 
 training:
   seed: 42
-  data_base_dir: "./noises"
   types:
     baseline:
-      output_dir: "./results/baseline"
+      output_dir: "results/baseline"
     static:
-      subfolder: "static"
+      subfolder: "noises/static"
       snr_range:
         min: 0
         max: 20 
-      output_dir: "./results/static"
+      output_dir: "results/static"
     complex:
-      subfolder: "complex"
+      subfolder: "noises/complex"
       snr_range:
         min: 5
         max: 25
-      output_dir: "./results/complex"
+      output_dir: "results/results/complex"
     babble:
-      subfolder: "babble"
+      subfolder: "noises/babble"
       snr_range:
         min: 10
         max: 30
-      output_dir: "./results/babble"
+      output_dir: "results/babble"
     all:
-      output_dir: "./results/all"
+      output_dir: "results/all"
   
   apply_augmentation: true
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
   num_train_epochs: 2
   learning_rate: 0.0001 # 1e-4
-  max_steps: 1000
-  logging_steps: 50
-  eval_steps: 200
-  save_steps: 200
+  max_steps: 10
+  logging_steps: 3
+  eval_steps: 5
+  save_steps: 5
   save_total_limit: 2
   metric_for_best_model: "cer"
