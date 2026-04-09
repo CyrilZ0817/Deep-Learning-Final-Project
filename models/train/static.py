@@ -25,19 +25,6 @@ with open("config.yaml", "r") as f:
     
 ACTIVE_TYPE = "static"  
 
-# --- LOAD DATASET ---
-train_dataset = load_dataset(
-    config["dataset"]["name"], 
-    config["dataset"]["subset"], 
-    split=config["dataset"]["train_split"]
-)
-valid_dataset = load_dataset(
-    config["dataset"]["name"], 
-    config["dataset"]["subset"], 
-    split=config["dataset"]["valid_split"]
-)
-
-
 SEED = config["training"]["seed"]
 random.seed(SEED)
 np.random.seed(SEED)
