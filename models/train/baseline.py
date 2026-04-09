@@ -125,7 +125,7 @@ model = Wav2Vec2ForCTC.from_pretrained(
 model.freeze_feature_encoder()
 
 training_args = TrainingArguments(
-    output_dir= os.path.join(script_dir, profile["output_dir"],),
+    output_dir= os.path.join(script_dir, config["training"]["types"][ACTIVE_TYPE]["output_dir"],),
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     per_device_eval_batch_size=config["training"]["per_device_eval_batch_size"],
     max_steps=config["training"]["max_steps"],                
