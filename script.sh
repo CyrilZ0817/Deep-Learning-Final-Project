@@ -4,7 +4,6 @@
 #SBATCH --job-name=train_static
 #SBATCH --output=logs/train_static.out
 #SBATCH --error=logs/train_static.err
-#SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
