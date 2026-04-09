@@ -28,7 +28,7 @@ source venv462/bin/activate
 
 # --- 2. Training Execution ---
 echo "Starting training at: $(date)"
-mkdir -p "${PROJECT_ROOT}/logs"
+mkdir -p "logs"
 
 # Run with -u to get real-time log updates in your .out file
 python3 "${PROJECT_ROOT}/models/train/static.py"
