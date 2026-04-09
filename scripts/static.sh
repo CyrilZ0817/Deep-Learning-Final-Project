@@ -11,14 +11,16 @@
 #SBATCH --mem=32G
 #SBATCH --time=24:00:00
 
+# SET THE DIRECTORY
+PROJECT_ROOT=""
+cd "$PROJECT_ROOT"
+
 # Create a virtual environment if it doesn't exist
 if [ ! -d "venv462" ]; then
     python3 -m venv venv462
     source venv462/bin/activate
     pip install requirements.txt --upgrade
 fi
-
-PROJECT_ROOT=""
 
 # Activate the environment
 source venv462/bin/activate
