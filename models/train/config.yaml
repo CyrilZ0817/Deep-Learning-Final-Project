@@ -14,27 +14,27 @@ training:
   data_base_dir: "./noises"
   types:
     baseline:
-      output_dir: "./baseline"
+      output_dir: "./results/baseline"
     static:
       subfolder: "static"
       snr_range:
         min: 0
         max: 20 
-      output_dir: "./static"
+      output_dir: "./results/static"
     complex:
       subfolder: "complex"
       snr_range:
         min: 5
         max: 25
-      output_dir: "./complex"
+      output_dir: "./results/complex"
     babble:
       subfolder: "babble"
       snr_range:
         min: 10
         max: 30
-      output_dir: "./babble"
+      output_dir: "./results/babble"
     all:
-      output_dir: "./all"
+      output_dir: "./results/all"
   
   apply_augmentation: true
   per_device_train_batch_size: 2
@@ -42,6 +42,8 @@ training:
   num_train_epochs: 2
   learning_rate: 0.0001 # 1e-4
   max_steps: 10
+  eval_steps: 5
+  save_steps: 5
   warmup_steps: 10
   logging_steps: 10
   save_total_limit: 2

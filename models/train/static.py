@@ -284,19 +284,20 @@ training_args = TrainingArguments(
     output_dir=config["training"]["types"][ACTIVE_TYPE]["output_dir"],
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     per_device_eval_batch_size=config["training"]["per_device_eval_batch_size"],
-    num_train_epochs=config["training"]["num_train_epochs"],
+    max_steps=config["training"]["max_steps"],                
     learning_rate=config["training"]["learning_rate"],
-    max_steps=config["training"]["max_steps"],
-    warmup_steps=config["training"]["warmup_steps"],
-    logging_steps=config["training"]["logging_steps"],
-    save_total_limit=config["training"]["save_total_limit"],
-    metric_for_best_model=config["training"]["metric_for_best_model"],
-    eval_strategy="epoch",
-    save_strategy="epoch",
+    logging_steps=1,            
+    
     fp16=torch.cuda.is_available(),
     report_to="none",
     load_best_model_at_end=True,
     greater_is_better=False,
+    
+    eval_strategy="steps",       
+    save_strategy="steps",       
+    eval_steps=config["training"]["eval_steps"],                
+    save_steps=config["training"]["save_steps"],
+    metric_for_best_model=config["training"]["metric_for_best_model"],
 )
 
 trainer = Trainer(
