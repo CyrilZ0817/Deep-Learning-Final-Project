@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # --- SLURM Resource Request ---
-#SBATCH --job-name=train_mixed
-#SBATCH --output=logs/train_mixed.out
-#SBATCH --error=logs/train_mixed.err
+#SBATCH --job-name=mixed_train
+#SBATCH --output=logs/mixed_train.out
+#SBATCH --error=logs/mixed_train.err
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

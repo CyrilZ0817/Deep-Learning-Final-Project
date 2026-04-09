@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # --- SLURM Resource Request ---
-#SBATCH --job-name=train_static
-#SBATCH --output=logs/train_static.out
-#SBATCH --error=logs/train_static.err
+#SBATCH --job-name=static_train
+#SBATCH --output=logs/static_train.out
+#SBATCH --error=logs/static_train.err
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
