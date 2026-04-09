@@ -123,6 +123,7 @@ training_args = TrainingArguments(
     num_train_epochs=config["training"]["num_train_epochs"],
     learning_rate=config["training"]["learning_rate"],
     max_steps=config["training"]["max_steps"],
+    max_steps=config["training"]["max_steps"],
     warmup_steps=config["training"]["warmup_steps"],
     logging_steps=config["training"]["logging_steps"],
     save_total_limit=config["training"]["save_total_limit"],
