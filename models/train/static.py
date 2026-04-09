@@ -282,6 +282,7 @@ model.freeze_feature_encoder()
 
 
 # training args
+print(f"DEBUG: Training for {config['training']['max_steps']} steps")
 
 training_args = TrainingArguments(
     output_dir= os.path.join(script_dir, profile["output_dir"],),
