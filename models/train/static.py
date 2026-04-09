@@ -101,9 +101,9 @@ def mix(clean, noise, snr_db):
 # 5. preload noises
 profile = config["training"]["types"][ACTIVE_TYPE]
 subfolder = profile["subfolder"]
+noise_dir = os.path.join(script_dir, subfolder)
 snr_min = profile["snr_range"]["min"]
 snr_max = profile["snr_range"]["max"]
-noise_dir = os.path.join(config["training"]["data_base_dir"], subfolder)
 loaded_noises = {}
 # Check if the directory exists
 if not os.path.exists(noise_dir):
