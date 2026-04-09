@@ -15,13 +15,13 @@
 # Create a virtual environment if it doesn't exist
 if [ ! -d "venv462" ]; then
     python3 -m venv venv462
+    source venv462/bin/activate
+    pip install requirements.txt --upgrade
 fi
 
 # Activate the environment
 source venv462/bin/activate
 
-# Install/Update requirements
-pip install requirements.txt --upgrade
 
 # --- 2. Training Execution ---
 echo "Starting training at: $(date)"
