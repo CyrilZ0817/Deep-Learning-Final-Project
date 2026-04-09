@@ -5,8 +5,8 @@ model:
 dataset:
   name: "librispeech_asr"
   subset: "clean"
-  train_split: "train.100[:1%]"
-  valid_split: "validation[:1%]"
+  train_split: "train.100"
+  valid_split: "validation"
   target_sampling_rate: 16000
 
 training:
