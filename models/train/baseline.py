@@ -1,4 +1,5 @@
 import io
+import os
 import yaml
 import numpy as np
 import soundfile as sf
@@ -17,7 +18,10 @@ from transformers import (
 from jiwer import cer
 
 # --- LOAD CONFIG ---
-with open("config.yaml", "r") as f:
+script_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(script_dir, "config.yaml")
+
+with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
 ACTIVE_TYPE = "baseline"  
@@ -121,7 +125,7 @@ model = Wav2Vec2ForCTC.from_pretrained(
 model.freeze_feature_encoder()
 
 training_args = TrainingArguments(
-    output_dir=config["training"]["types"][ACTIVE_TYPE]["output_dir"],
+    output_dir= os.path.join(script_dir, profile["output_dir"],),
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     per_device_eval_batch_size=config["training"]["per_device_eval_batch_size"],
     max_steps=config["training"]["max_steps"],                

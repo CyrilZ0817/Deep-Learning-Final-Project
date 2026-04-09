@@ -20,7 +20,10 @@ from jiwer import cer
 
 
 # --- LOAD CONFIG ---
-with open("config.yaml", "r") as f:
+script_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(script_dir, "config.yaml")
+
+with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 ACTIVE_TYPE = "mixed" 
 
@@ -104,7 +107,7 @@ print(f"--- Starting bulk load for ALL noise types ---")
 # Iterate through every noise type defined in the config (env, social, speech, etc.)
 for noise_type, p in all_types.items():
     subfolder = p["subfolder"]
-    noise_dir = os.path.join(config["training"]["data_base_dir"], subfolder)
+    noise_dir = os.path.join(script_dir, subfolder)
     
     # Check if the directory exists for this specific type
     if not os.path.exists(noise_dir):
@@ -305,7 +308,7 @@ model.freeze_feature_encoder()
 
 # 11. training args
 training_args = TrainingArguments(
-    output_dir=config["training"]["types"][ACTIVE_TYPE]["output_dir"],
+    output_dir= os.path.join(script_dir, profile["output_dir"],),
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     per_device_eval_batch_size=config["training"]["per_device_eval_batch_size"],
     max_steps=config["training"]["max_steps"],                
