@@ -286,7 +286,7 @@ training_args = TrainingArguments(
     per_device_eval_batch_size=config["training"]["per_device_eval_batch_size"],
     max_steps=config["training"]["max_steps"],                
     learning_rate=config["training"]["learning_rate"],
-    logging_steps=1,            
+    logging_steps=config["training"]["logging_steps"],            
     
     fp16=torch.cuda.is_available(),
     report_to="none",
@@ -304,7 +304,7 @@ trainer = Trainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
-    eval_dataset=valid_dataset,
+    eval_dataset=valid_dataset.take(100),
     processing_class=processor,
     data_collator=data_collator,
     compute_metrics=compute_metrics,
@@ -312,7 +312,7 @@ trainer = Trainer(
 
 # --- EXECUTION ---
 trainer.train()
-metrics = trainer.evaluate()
+metrics = trainer.evaluate(eval_dataset=valid_dataset.take(100))
 print(f"\nFinal evaluation: {metrics}")
 
 trainer.save_model(config["training"]["types"][ACTIVE_TYPE]["output_dir"])
