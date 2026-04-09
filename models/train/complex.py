@@ -25,34 +25,24 @@ with open("config.yaml", "r") as f:
 
 ACTIVE_TYPE = "complex"
 
-# --- LOAD DATASET ---
-train_dataset = load_dataset(
-    config["dataset"]["name"], 
-    config["dataset"]["subset"], 
-    split=config["dataset"]["train_split"]
-)
-valid_dataset = load_dataset(
-    config["dataset"]["name"], 
-    config["dataset"]["subset"], 
-    split=config["dataset"]["valid_split"]
-)
 
 SEED = config["training"]["seed"]
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-
-# 2. load dataset
+# load dataset
 train_dataset = load_dataset(
     config["dataset"]["name"], 
     config["dataset"]["subset"], 
-    split=config["dataset"]["train_split"]
+    split=config["dataset"]["train_split"],
+    streaming=True 
 )
 valid_dataset = load_dataset(
     config["dataset"]["name"], 
     config["dataset"]["subset"], 
-    split=config["dataset"]["valid_split"]
+    split=config["dataset"]["valid_split"],
+    streaming=True 
 )
 
 train_dataset = train_dataset.cast_column("audio", Audio(decode=False))
