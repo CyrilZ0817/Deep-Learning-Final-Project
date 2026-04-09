@@ -3,7 +3,6 @@ import yaml
 import numpy as np
 import soundfile as sf
 import torch
-import librosa
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Union
@@ -55,9 +54,14 @@ def load_audio_from_record(batch):
     if len(audio.shape) > 1:
         audio = audio.mean(axis=1)
 
+     # Standardize Sample Rate (from config)
+    target_sr = config["dataset"]["target_sampling_rate"]
     if sr != target_sr:
+        import librosa
         audio = librosa.resample(audio.astype("float32"), orig_sr=sr, target_sr=target_sr)
         sr = target_sr
+
+    audio = audio.astype("float32")
 
     batch["speech"] = audio.astype("float32")
     batch["sampling_rate"] = sr
