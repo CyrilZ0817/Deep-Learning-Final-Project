@@ -278,7 +278,7 @@ model = Wav2Vec2ForCTC.from_pretrained(
 model.freeze_feature_encoder()
 
 
-# 11. training args
+# training args
 
 training_args = TrainingArguments(
     output_dir=config["training"]["types"][ACTIVE_TYPE]["output_dir"],
