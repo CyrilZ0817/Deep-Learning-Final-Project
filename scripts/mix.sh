@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # --- SLURM Resource Request ---
-#SBATCH --job-name=train_mix
-#SBATCH --output=logs/train_mix.out
-#SBATCH --error=logs/train_mix.err
+#SBATCH --job-name=train_mixed
+#SBATCH --output=logs/train_mixed.out
+#SBATCH --error=logs/train_mixed.err
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -31,6 +31,6 @@ echo "Starting training at: $(date)"
 mkdir -p "logs"
 
 # Run with -u to get real-time log updates in your .out file
-python3 "${PROJECT_ROOT}/models/train/mix.py"
+python3 "${PROJECT_ROOT}/models/train/mixed.py"
 
 echo "Job finished at: $(date)"
