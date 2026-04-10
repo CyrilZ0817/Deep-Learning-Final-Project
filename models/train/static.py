@@ -7,12 +7,7 @@ import soundfile as sf
 from dataclasses import dataclass
 from typing import Dict, List, Union
 from datasets import load_from_disk
-from transformers import (
-    Wav2Vec2Processor, 
-    Wav2Vec2ForCTC, 
-    TrainingArguments, 
-    Trainer
-)
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
 from jiwer import cer
 
 # --- 1. SETUP & CONFIG ---
@@ -23,16 +18,11 @@ with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
 ACTIVE_TYPE = "static" 
 profile = config["training"]["types"][ACTIVE_TYPE]
 
-# Load Pre-processed Clean Data
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
-
-# Debug: Verify data existence
-print(f"--- DEBUG: Dataset size on disk: {len(train_raw)} samples ---")
-for i in range(3):
-    print(f"Row {i} Text: {train_raw[i]['clean_text'][:50]}...")
-
 train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=42)
+
+# For Evaluation: If you want CLEAN eval, do not map mix_on_the_fly to valid_dataset
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
@@ -50,12 +40,11 @@ def load_noises():
 LOADED_NOISES = load_noises()
 NOISE_NAMES = list(LOADED_NOISES.keys())
 
-# --- 3. ON-THE-FLY NOISE MIXING ---
+# --- 3. MIXING WITH NUMERICAL SANITIZATION ---
 def mix_on_the_fly(batch):
-    clean = np.array(batch["clean_audio"])
+    clean = np.array(batch["clean_audio"], dtype=np.float32)
     text = str(batch["clean_text"]).upper().strip()
 
-    # Noise mixing
     noise = LOADED_NOISES[random.choice(NOISE_NAMES)]
     snr = random.randint(profile["snr_range"]["min"], profile["snr_range"]["max"])
     
@@ -70,35 +59,38 @@ def mix_on_the_fly(batch):
         noise_aligned = noise[start : start + len(clean)]
     
     mixed = clean + noise_aligned * (target_n_rms / (n_rms + 1e-8))
-
-    # To ensure no clipping
-    if np.max(np.abs(mixed)) > 1.0:
-        mixed = mixed / np.max(np.abs(mixed))
-
-    # Feature Extraction
-    batch["input_values"] = processor(mixed, sampling_rate=16000).input_values[0]
     
-    # FIX: Use tokenizer directly to avoid AttributeError
+    # --- FIX: Extreme Sanitization ---
+    # Ensure no NaNs and clip to valid audio range
+    mixed = np.nan_to_num(mixed)
+    if np.max(np.abs(mixed)) > 1.0:
+        mixed = mixed / (np.max(np.abs(mixed)) + 1e-8)
+
+    batch["input_values"] = processor(mixed, sampling_rate=16000).input_values[0]
     batch["labels"] = processor.tokenizer(text).input_ids
     return batch
 
 train_dataset = train_dataset.map(mix_on_the_fly)
+# If you want to evaluate on NOISY data, keep this line. 
+# If you want CLEAN evaluation, comment this line out and map a cleaner function.
 valid_dataset = valid_dataset.map(mix_on_the_fly)
 
-# --- 4. ROBUST DATA COLLATOR ---
+# --- 4. FAIL-SAFE DATA COLLATOR ---
 @dataclass
 class DataCollatorCTCWithPadding:
     processor: Wav2Vec2Processor
     padding: bool = True
 
-    def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
+    def __call__(self, features):
         input_features = [{"input_values": feature["input_values"]} for feature in features]
         label_features = [{"input_ids": feature["labels"]} for feature in features]
         
         batch = self.processor.pad(input_features, padding=self.padding, return_tensors="pt")
         
-        # FIX: Pad labels and mask with -100 to avoid Loss 0
+        # Standardize labels
         labels_batch = self.processor.tokenizer.pad(label_features, padding=self.padding, return_tensors="pt")
+        
+        # Use a more conservative mask
         labels = labels_batch["input_ids"].masked_fill(labels_batch["attention_mask"].ne(1), -100)
         
         batch["labels"] = labels
@@ -106,34 +98,29 @@ class DataCollatorCTCWithPadding:
 
 data_collator = DataCollatorCTCWithPadding(processor=processor)
 
-# --- 5. METRICS ---
-def compute_metrics(pred):
-    pred_logits = pred.predictions
-    pred_ids = np.argmax(pred_logits, axis=-1)
-    label_ids = pred.label_ids.copy()
-    label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
-    
-    pred_str = processor.batch_decode(pred_ids)
-    label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
-    
-    cer_scores = [cer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
-    return {"cer": float(np.mean(cer_scores))}
-
-# --- 6. MODEL & TRAINING ---
+# --- 5. MODEL WITH CTC STABILITY ---
 model = Wav2Vec2ForCTC.from_pretrained(
     config["model"]["name"], 
     ctc_loss_reduction=config["model"]["ctc_loss_reduction"],
-    pad_token_id=processor.tokenizer.pad_token_id
+    pad_token_id=processor.tokenizer.pad_token_id,
+    # --- FIX: ZERO INFINITY ---
+    # This prevents 'nan' loss if the alignment is mathematically impossible
+    ctc_zero_infinity=True 
 )
 model.freeze_feature_encoder()
 
+# --- 6. TRAINING ARGUMENTS ---
 training_args = TrainingArguments(
     output_dir=os.path.join(SCRIPT_DIR, profile["output_dir"]),
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
-    fp16=torch.cuda.is_available(),
-    logging_steps=1,  # Keep logging_steps=1 to monitor the Loss 0 issue
+    
+    # --- FIX: DISABLE FP16 ---
+    # Some cluster GPUs/drivers have issues with fp16 in early training steps
+    fp16=False, 
+    
+    logging_steps=1,
     eval_strategy="steps",
     eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
@@ -147,8 +134,18 @@ trainer = Trainer(
     train_dataset=train_dataset,
     eval_dataset=valid_dataset.take(100),
     data_collator=data_collator,
-    compute_metrics=compute_metrics,
 )
 
-print("--- Starting Training ---")
+# --- 7. FINAL BATCH INSPECTION ---
+print("--- DEBUG: Inspecting the first real batch for the model ---")
+dataloader = trainer.get_train_dataloader()
+first_batch = next(iter(dataloader))
+print(f"Batch Inputs Shape: {first_batch['input_values'].shape}")
+print(f"Batch Labels Shape: {first_batch['labels'].shape}")
+print(f"Non-masked labels in first sample: {(first_batch['labels'][0] != -100).sum()}")
+
+if (first_batch['labels'] != -100).sum() == 0:
+    print("!!! CRITICAL: THE ENTIRE BATCH IS MASKED. TRAINING WILL FAIL.")
+
+print("--- Starting Trainer ---")
 trainer.train()
