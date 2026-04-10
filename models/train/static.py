@@ -35,8 +35,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 train_data_path = os.path.join(script_dir, "data/librispeech_train_100")
 valid_data_path = os.path.join(script_dir, "data/librispeech_val")
 print(f"Loading local datasets from {script_dir}...")
-train_dataset = load_from_disk(train_data_path)
-valid_dataset = load_from_disk(valid_data_path)
+train_dataset = load_from_disk(train_data_path).to_iterable_dataset()
+valid_dataset = load_from_disk(valid_data_path).to_iterable_dataset()
 
 train_dataset = train_dataset.cast_column("audio", Audio(decode=False))
 valid_dataset = valid_dataset.cast_column("audio", Audio(decode=False))
@@ -223,13 +223,17 @@ training_args = TrainingArguments(
     logging_steps=config["training"]["logging_steps"],            
     fp16=torch.cuda.is_available(),
     report_to="none",
-    load_best_model_at_end=True,
-    greater_is_better=False,
-    eval_strategy="steps",       
-    save_strategy="steps",       
+    
+    load_best_model_at_end=False,
+    save_total_limit=2,          
+    
+    eval_strategy="steps",        
+    save_strategy="steps",        
     eval_steps=config["training"]["eval_steps"],                
     save_steps=config["training"]["save_steps"],
     metric_for_best_model=config["training"]["metric_for_best_model"],
+    
+    dataloader_num_workers=0,
 )
 
 trainer = Trainer(
