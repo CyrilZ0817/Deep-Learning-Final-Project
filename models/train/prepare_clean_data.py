@@ -13,7 +13,7 @@ VALID_IN = os.path.join(SCRIPT_DIR, "data/librispeech_val")
 OUT_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 
 TARGET_SR = 16000
-NUM_PROC = os.cpu_count() or 4
+NUM_PROC = 4
 
 def process_clean(batch):
     audio_info = batch["audio"]
