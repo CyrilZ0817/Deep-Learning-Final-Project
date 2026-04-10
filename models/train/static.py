@@ -112,16 +112,14 @@ training_args = TrainingArguments(
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
     
-    # --- FIX: DISABLE FP16 ---
-    # Some cluster GPUs/drivers have issues with fp16 in early training steps
-    fp16=False, 
-    
     logging_steps=200,
     eval_strategy="steps",
     eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
     load_best_model_at_end=True,
-    report_to="none"
+    fp16=torch.cuda.is_available(),
+    metric_for_best_model="cer",
+    greater_is_better=False,
 )
 
 trainer = Trainer(
