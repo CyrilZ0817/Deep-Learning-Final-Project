@@ -170,16 +170,14 @@ def load_audio_from_record(batch):
     # 3. Handle Length Alignment
     audio_len = len(audio)
     noise_len = len(noise_signal)
-
+    
     if audio_len > noise_len:
-        # a. Audio is longer -> Crop audio to match noise length
-        audio = audio[:noise_len]
-        final_noise = noise_signal
+        # Noise is shorter than audio -> Loop the noise to match the audio
+        repeats = (audio_len // noise_len) + 1
+        final_noise = np.tile(noise_signal, repeats)[:audio_len]
     else:
-        # b. Noise is longer -> Pick a random segment of noise to fit the audio
-        # Randomly choose a start index between 0 and (noise_len - audio_len)
-        max_start = noise_len - audio_len
-        start_idx = random.randint(0, max_start)
+        # Noise is longer than audio -> Crop a random segment of noise
+        start_idx = random.randint(0, noise_len - audio_len)
         final_noise = noise_signal[start_idx : start_idx + audio_len]
 
     # 4. Mix and return
@@ -203,6 +201,9 @@ print("train snr   =", train_dataset[0]["chosen_snr"])
 
 # 7. prepare features
 def prepare_dataset(batch):
+    if not batch or "speech" not in batch:
+        print("WARNING: Received an empty batch!")
+        return None
     batch["input_values"] = processor(
         batch["speech"],
         sampling_rate=batch["sampling_rate"]
