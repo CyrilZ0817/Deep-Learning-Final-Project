@@ -18,19 +18,19 @@ training:
       subfolder: "noises/static"
       snr_range:
         min: 0
-        max: 20 
+        max: 15
       output_dir: "results/static"
     complex:
       subfolder: "noises/complex"
       snr_range:
-        min: 5
-        max: 25
-      output_dir: "results/results/complex"
+        min: 0
+        max: 15
+      output_dir: "results/complex"
     babble:
       subfolder: "noises/babble"
       snr_range:
         min: 10
-        max: 30
+        max: 25
       output_dir: "results/babble"
     all:
       output_dir: "results/all"
@@ -40,7 +40,7 @@ training:
   per_device_eval_batch_size: 2
   num_train_epochs: 2
   learning_rate: 0.0001 # 1e-4
-  max_steps: 2500
+  max_steps: 5000
   logging_steps: 100
   eval_steps: 500
   save_steps: 500
