@@ -120,7 +120,7 @@ training_args = TrainingArguments(
     eval_strategy="steps",
     eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
-    oad_best_model_at_end=True,
+    load_best_model_at_end=True,
     report_to="none"
 )
 
