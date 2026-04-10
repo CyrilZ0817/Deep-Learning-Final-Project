@@ -7,12 +7,7 @@ import soundfile as sf
 from dataclasses import dataclass
 from typing import Dict, List, Union
 from datasets import load_from_disk
-from transformers import (
-    Wav2Vec2Processor, 
-    Wav2Vec2ForCTC, 
-    TrainingArguments, 
-    Trainer
-)
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
 from jiwer import cer
 
 # --- 1. SETUP & CONFIG ---
@@ -20,61 +15,95 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
 
-ACTIVE_TYPE = "static"  # Change this for each different noise experiment
+ACTIVE_TYPE = "static" 
 profile = config["training"]["types"][ACTIVE_TYPE]
 
-# Load the CLEAN 16kHz data we processed in Part 1
+print(f"--- DEBUG: Loading Clean Data from Disk ---")
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
-train_dataset = load_from_disk(os.path.join(DATA_PATH, "train")).to_iterable_dataset()
+
+# Check if directory exists
+if not os.path.exists(DATA_PATH):
+    print(f"CRITICAL ERROR: Data path {DATA_PATH} does not exist!")
+
+train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
+print(f"--- DEBUG: Dataset size on disk: {len(train_raw)} samples ---")
+
+if len(train_raw) == 0:
+    print("CRITICAL ERROR: The processed dataset is EMPTY. Check your pre-processing script.")
+
+# Convert to iterable
+train_dataset = train_raw.to_iterable_dataset()
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
 
-# --- 2. NOISE UTILS ---
+# --- 2. NOISE UTILS WITH DEBUG ---
 def load_noises():
     loaded = {}
     noise_dir = os.path.join(SCRIPT_DIR, profile["subfolder"])
+    print(f"--- DEBUG: Looking for noises in {noise_dir} ---")
+    
     if not os.path.exists(noise_dir):
-        raise FileNotFoundError(f"Noise directory {noise_dir} not found!")
-    for f in os.listdir(noise_dir):
-        if f.lower().endswith(".wav"):
-            audio, _ = sf.read(os.path.join(noise_dir, f))
-            loaded[f] = audio.astype("float32")
+        print(f"CRITICAL ERROR: Noise directory {noise_dir} not found!")
+        return loaded
+
+    files = [f for f in os.listdir(noise_dir) if f.lower().endswith(".wav")]
+    print(f"--- DEBUG: Found {len(files)} noise files ---")
+
+    for f in files:
+        audio, _ = sf.read(os.path.join(noise_dir, f))
+        loaded[f] = audio.astype("float32")
     return loaded
 
 LOADED_NOISES = load_noises()
 NOISE_NAMES = list(LOADED_NOISES.keys())
 
 def mix_on_the_fly(batch):
-    """Adds noise and extracts Wav2Vec2 features."""
+    # This print will run for EVERY sample. 
+    # If you see this scrolling fast, the map is working.
     clean = np.array(batch["clean_audio"])
+    
+    if len(clean) == 0:
+        print("WARNING: Encountered empty clean_audio array!")
+        return batch
+
     noise = LOADED_NOISES[random.choice(NOISE_NAMES)]
     snr = random.randint(profile["snr_range"]["min"], profile["snr_range"]["max"])
     
-    # RMS Mixing logic
     c_rms = np.sqrt(np.mean(clean**2) + 1e-8)
     n_rms = np.sqrt(np.mean(noise**2) + 1e-8)
     target_n_rms = c_rms / (10 ** (snr / 20))
     
-    # Align noise length (Loop or Slice)
     if len(clean) > len(noise):
-        noise = np.tile(noise, (len(clean) // len(noise)) + 1)[:len(clean)]
+        noise_aligned = np.tile(noise, (len(clean) // len(noise)) + 1)[:len(clean)]
     else:
         start = random.randint(0, len(noise) - len(clean))
-        noise = noise[start : start + len(clean)]
+        noise_aligned = noise[start : start + len(clean)]
     
-    mixed = clean + noise * (target_n_rms / (n_rms + 1e-8))
+    mixed = clean + noise_aligned * (target_n_rms / (n_rms + 1e-8))
     
-    # Extract Features for the Model
+    # Check for NaNs (Common cause of speed-training)
+    if np.isnan(mixed).any():
+        print("CRITICAL: Mixed audio contains NaNs!")
+
     batch["input_values"] = processor(mixed, sampling_rate=16000).input_values[0]
     batch["labels"] = processor.tokenizer(batch["clean_text"]).input_ids
     return batch
 
-# Apply lazy mapping (no processing happens until training starts)
 train_dataset = train_dataset.map(mix_on_the_fly)
-valid_dataset = valid_dataset.map(mix_on_the_fly)
 
-# --- 3. DATA COLLATOR (The 'existing' one) ---
+# --- 3. TEST A SAMPLE BEFORE TRAINING ---
+print("--- DEBUG: Testing one sample from the pipeline ---")
+try:
+    test_sample = next(iter(train_dataset))
+    print(f"Test Sample Label IDs: {test_sample['labels']}")
+    print(f"Test Sample Input Shape: {len(test_sample['input_values'])}")
+    if len(test_sample['input_values']) < 1000:
+        print("WARNING: Input values are suspiciously short!")
+except Exception as e:
+    print(f"CRITICAL ERROR during pipeline test: {e}")
+
+# --- 4. DATA COLLATOR ---
 @dataclass
 class DataCollatorCTCWithPadding:
     processor: Wav2Vec2Processor
@@ -86,25 +115,14 @@ class DataCollatorCTCWithPadding:
         batch = self.processor.pad(input_features, padding=self.padding, return_tensors="pt")
         labels_batch = self.processor.tokenizer.pad(label_features, padding=self.padding, return_tensors="pt")
         
-        # Mask labels so the model ignores padding in the loss function
         labels = labels_batch["input_ids"].masked_fill(labels_batch["attention_mask"].ne(1), -100)
         batch["labels"] = labels
+        
+        # DEBUG: Check batch shape
+        # print(f"DEBUG Batch: Inputs {batch['input_values'].shape}, Labels {batch['labels'].shape}")
         return batch
 
 data_collator = DataCollatorCTCWithPadding(processor=processor)
-
-# --- 4. METRICS ---
-def compute_metrics(pred):
-    pred_logits = pred.predictions
-    pred_ids = np.argmax(pred_logits, axis=-1)
-    label_ids = pred.label_ids.copy()
-    label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
-    
-    pred_str = processor.batch_decode(pred_ids)
-    label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
-    
-    cer_scores = [cer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
-    return {"cer": float(np.mean(cer_scores))}
 
 # --- 5. TRAINING ---
 model = Wav2Vec2ForCTC.from_pretrained(
@@ -120,11 +138,8 @@ training_args = TrainingArguments(
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
     fp16=torch.cuda.is_available(),
-    logging_steps=config["training"]["logging_steps"],
-    eval_strategy="steps",
-    eval_steps=config["training"]["eval_steps"],
-    save_steps=config["training"]["save_steps"],
-    load_best_model_at_end=False,  # Set to False for IterableDatasets
+    logging_steps=1, # Log every single step to see loss
+    eval_strategy="no",
     report_to="none"
 )
 
@@ -132,9 +147,8 @@ trainer = Trainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
-    eval_dataset=valid_dataset.take(100), # Take a small sample for fast evaluation
     data_collator=data_collator,
-    compute_metrics=compute_metrics,
 )
 
+print("--- Starting Trainer ---")
 trainer.train()
