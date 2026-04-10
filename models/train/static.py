@@ -15,14 +15,12 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
 
-ACTIVE_TYPE = "static" 
+ACTIVE_TYPE = "babble" 
 profile = config["training"]["types"][ACTIVE_TYPE]
 
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
 train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=42)
-
-# For Evaluation: If you want CLEAN eval, do not map mix_on_the_fly to valid_dataset
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
@@ -71,8 +69,6 @@ def mix_on_the_fly(batch):
     return batch
 
 train_dataset = train_dataset.map(mix_on_the_fly)
-# If you want to evaluate on NOISY data, keep this line. 
-# If you want CLEAN evaluation, comment this line out and map a cleaner function.
 valid_dataset = valid_dataset.map(mix_on_the_fly)
 
 # --- 4. FAIL-SAFE DATA COLLATOR ---
@@ -120,7 +116,7 @@ training_args = TrainingArguments(
     # Some cluster GPUs/drivers have issues with fp16 in early training steps
     fp16=False, 
     
-    logging_steps=1,
+    logging_steps=200,
     eval_strategy="steps",
     eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
