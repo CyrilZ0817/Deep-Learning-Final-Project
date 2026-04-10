@@ -41,7 +41,7 @@ training:
   num_train_epochs: 2
   learning_rate: 0.0001 # 1e-4
   max_steps: 5000
-  logging_steps: 100
+  logging_steps: 250
   eval_steps: 500
   save_steps: 500
   save_total_limit: 2
