@@ -2,8 +2,8 @@
 
 # --- SLURM Resource Request ---
 #SBATCH --job-name=babble_train
-#SBATCH --output=logs/babble_train.out
-#SBATCH --error=logs/babble_train.err
+#SBATCH --output=logs/babble/train.out
+#SBATCH --error=logs/babble/train.err
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
