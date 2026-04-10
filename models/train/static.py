@@ -8,7 +8,7 @@ import yaml
 from dataclasses import dataclass
 from typing import Dict, List, Union
 
-from datasets import load_dataset, Audio, IterableDataset
+from datasets import load_from_disk, Audio
 from transformers import (
     Wav2Vec2Processor,
     Wav2Vec2ForCTC,
@@ -31,19 +31,12 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-# 1. Load dataset with streaming
-train_dataset = load_dataset(
-    config["dataset"]["name"], 
-    config["dataset"]["subset"], 
-    split=config["dataset"]["train_split"],
-    streaming=True 
-)
-valid_dataset = load_dataset(
-    config["dataset"]["name"], 
-    config["dataset"]["subset"], 
-    split=config["dataset"]["valid_split"],
-    streaming=True 
-)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+train_data_path = os.path.join(script_dir, "data/librispeech_train_100")
+valid_data_path = os.path.join(script_dir, "data/librispeech_val")
+print(f"Loading local datasets from {script_dir}...")
+train_dataset = load_from_disk(train_data_path)
+valid_dataset = load_from_disk(valid_data_path)
 
 train_dataset = train_dataset.cast_column("audio", Audio(decode=False))
 valid_dataset = valid_dataset.cast_column("audio", Audio(decode=False))
