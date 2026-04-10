@@ -45,9 +45,8 @@ valid_dataset = load_dataset(
     streaming=True 
 )
 
-# 2. Cast column to Audio with proper sampling rate (this decodes automatically)
-train_dataset = train_dataset.cast_column("audio", Audio(sampling_rate=16000))
-valid_dataset = valid_dataset.cast_column("audio", Audio(sampling_rate=16000))
+train_dataset = train_dataset.cast_column("audio", Audio(decode=False))
+valid_dataset = valid_dataset.cast_column("audio", Audio(decode=False))
 
 # 3. Load processor
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
@@ -102,10 +101,35 @@ print(f"--- Successfully loaded {len(available_noise_names)} {ACTIVE_TYPE} noise
 
 # 6. Augmented Audio Loader
 def load_audio_from_record(batch):
-    # audio is already decoded into a dict with 'array' thanks to .cast_column
-    audio = batch["audio"]["array"].astype("float32")
-    sr = batch["audio"]["sampling_rate"]
+    audio_info = batch["audio"]
 
+    # MANUALLY DECODE using soundfile (bypasses torchcodec)
+    try:
+        if audio_info["bytes"] is not None:
+            # Handle streamed bytes
+            audio, sr = sf.read(io.BytesIO(audio_info["bytes"]))
+        else:
+            # Handle local file paths
+            audio, sr = sf.read(audio_info["path"])
+    except Exception as e:
+        print(f"Error decoding audio: {e}")
+        # Return a dummy signal so the trainer doesn't crash, 
+        # but you should investigate if this happens often.
+        audio, sr = np.zeros(16000), 16000
+
+    if len(audio.shape) > 1:
+        audio = audio.mean(axis=1)
+
+    # Resample if necessary
+    target_sr = 16000
+    if sr != target_sr:
+        import librosa
+        audio = librosa.resample(audio.astype("float32"), orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+
+    audio = audio.astype("float32")
+
+    # Pick random noise and align (Looping logic)
     chosen_noise_name = random.choice(available_noise_names)
     noise_signal = loaded_noises[chosen_noise_name]
     chosen_snr = random.randint(snr_min, snr_max)
@@ -113,13 +137,11 @@ def load_audio_from_record(batch):
     audio_len = len(audio)
     noise_len = len(noise_signal)
 
-    # NOISE ALIGNMENT: Ensure we loop noise rather than cropping audio
     if audio_len > noise_len:
         repeats = (audio_len // noise_len) + 1
         final_noise = np.tile(noise_signal, repeats)[:audio_len]
     else:
-        max_start = noise_len - audio_len
-        start_idx = random.randint(0, max_start)
+        start_idx = random.randint(0, noise_len - audio_len)
         final_noise = noise_signal[start_idx : start_idx + audio_len]
 
     batch["speech"] = mix(audio, final_noise, chosen_snr)
