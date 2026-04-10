@@ -152,7 +152,6 @@ debug_sample = next(iter(train_dataset))
 print("Example augmentation:")
 print(f"train noise = {debug_sample['chosen_noise']}")
 print(f"train snr   = {debug_sample['chosen_snr']}")
-print(f"audio shape = {debug_sample['speech'].shape}")
 
 # 7. Prepare features
 def prepare_dataset(batch):
