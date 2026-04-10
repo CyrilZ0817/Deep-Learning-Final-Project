@@ -2,13 +2,13 @@
 
 # --- SLURM Resource Request ---
 #SBATCH --job-name=static_train
-#SBATCH --output=logs/static_train.out
-#SBATCH --error=logs/static_train.err
+#SBATCH --output=logs/static/train.out
+#SBATCH --error=logs/static/train.err
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --time=24:00:00
 
 # SET THE DIRECTORY
@@ -28,7 +28,7 @@ source venv462/bin/activate
 
 # --- 2. Training Execution ---
 echo "Starting training at: $(date)"
-mkdir -p "logs"
+mkdir -p "logs/static"
 
 # Run with -u to get real-time log updates in your .out file
 python3 "${PROJECT_ROOT}/models/train/static.py"
