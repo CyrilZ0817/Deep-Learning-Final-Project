@@ -163,12 +163,23 @@ print(f"audio shape = {debug_sample['speech'].shape}")
 
 # 7. Prepare features
 def prepare_dataset(batch):
+    # 1. Clean and Uppercase the text (MANDATORY for this model)
+    # Librispeech is usually uppercase, but streaming can sometimes vary
+    text = batch["target_text"].upper()
+    
+    # 2. Tokenize
+    labels = processor.tokenizer(text).input_ids
+    
+    # 3. Diagnostic Print (Only shows up once in logs usually)
+    if len(labels) == 0:
+        print(f"!!! CRITICAL WARNING: Text '{text}' resulted in empty labels!")
+    
     batch["input_values"] = processor(
         batch["speech"],
         sampling_rate=batch["sampling_rate"]
     ).input_values[0]
 
-    batch["labels"] = processor.tokenizer(batch["target_text"]).input_ids
+    batch["labels"] = labels
     return batch
 
 # We remove columns manually because iterable datasets can be picky about column_names
