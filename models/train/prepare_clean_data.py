@@ -17,7 +17,6 @@ MIN_DUR = 3.0
 MAX_DUR = 16.0
 
 def process_clean(batch):
-    # Initialize the return dictionary with placeholders to keep schema consistent
     result = {
         "clean_audio": None,
         "clean_text": "",
@@ -27,9 +26,6 @@ def process_clean(batch):
     try:
         # 1. Validate Keys
         if "audio" not in batch or "text" not in batch:
-            # Find which key is missing for the print statement
-            missing = [k for k in ["audio", "text"] if k not in batch]
-            print(f"[SKIP] Missing keys {missing} in row.")
             return result
 
         audio_info = batch["audio"]
@@ -40,7 +36,6 @@ def process_clean(batch):
         elif audio_info.get("path") and os.path.exists(audio_info["path"]):
             audio, sr = sf.read(audio_info["path"])
         else:
-            print(f"[SKIP] Audio path invalid or bytes empty: {audio_info.get('path')}")
             return result
 
         # 3. Mono & Resample
@@ -52,22 +47,19 @@ def process_clean(batch):
         audio = audio.astype("float32")
         duration = len(audio) / TARGET_SR
 
-        # 4. Filtering Logic (Silence & Duration)
+        # 4. Filtering Logic
         if np.max(np.abs(audio)) < 1e-6:
-            print(f"[SKIP] Absolute silence detected.")
             return result
         
         if not (MIN_DUR <= duration <= MAX_DUR):
-            # Optional: print(f"[SKIP] Duration {duration:.2f}s out of bounds.")
             return result
 
-        # If we made it here, the row is "good"
+        # Success
         result["clean_audio"] = audio
         result["clean_text"] = batch["text"].upper()
         result["keep"] = True
 
-    except Exception as e:
-        print(f"[ERROR] Unexpected error processing row: {e}")
+    except Exception:
         return result
 
     return result
@@ -75,34 +67,31 @@ def process_clean(batch):
 if __name__ == "__main__":
     print("Starting Clean Pre-processing...")
     
-    # Load and cast
+    # Load dataset
     ds = load_from_disk(TRAIN_IN).cast_column("audio", Audio(decode=False))
+    initial_count = len(ds)
+    print(f"Initial dataset size: {initial_count}")
     
-    # Map: Processes every row and marks 'keep' as True/False
-    # Note: printing inside map with num_proc can be messy, but it works for debugging
+    # Process
     ds = ds.map(process_clean, num_proc=NUM_PROC)
     
-    # Filter: Physically removes the rows where keep is False
+    # Filter
     print("Filtering rows...")
-    ds = ds.filter(lambda x: x["keep"], num_proc=NUM_PROC)
+    final_ds = ds.filter(lambda x: x["keep"], num_proc=NUM_PROC)
     
-    # Cleanup: Remove helper columns and original data
-    final_ds = ds.select_columns(["clean_audio", "clean_text"])
+    # Calculate stats
+    final_count = len(final_ds)
+    removed_count = initial_count - final_count
+    pass_percentage = (final_count / initial_count) * 100
 
-    print(f"Saving to {OUT_PATH}...")
-    final_ds.save_to_disk(os.path.join(OUT_PATH, "train"))
+    # Cleanup columns
+    final_ds = final_ds.select_columns(["clean_audio", "clean_text"])
 
-    # --- OUTPUT 5 RANDOM SAMPLES ---
-    if len(final_ds) > 5:
-        print("Saving 5 random samples for verification...")
-        indices = random.sample(range(len(final_ds)), 5)
-        
-        with open(os.path.join(SCRIPT_DIR, "samples_transcript.txt"), "w") as f:
-            for i, idx in enumerate(indices):
-                sample = final_ds[idx]
-                audio_name = f"sample_{i+1}.wav"
-                sf.write(os.path.join(SCRIPT_DIR, audio_name), sample["clean_audio"], TARGET_SR)
-                f.write(f"{audio_name}: {sample['clean_text']}\n")
-        print(f"Samples saved to {SCRIPT_DIR}")
-    else:
-        print("Not enough samples remaining after filtering to save 5 verification files.")
+    # Summary Output
+    print("-" * 30)
+    print("PRE-PROCESSING SUMMARY")
+    print(f"Total processed: {initial_count}")
+    print(f"Samples passed:  {final_count}")
+    print(f"Samples removed: {removed_count}")
+    print(f"Success rate:    {pass_percentage:.2f}%")
+    print("-" *
