@@ -19,14 +19,14 @@ ACTIVE_TYPE = "babble"
 profile = config["training"]["types"][ACTIVE_TYPE]
 
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
-train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
+train_raw = train_raw.filter(lambda x: len(x["clean_text"]) < 100)  # drop very long transcripts
 train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=config["training"]["seed"])
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
 print(f"the keys of the dataset are {train_dataset.features.keys()}")
 
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
-processor.feature_extractor.do_normalize = False 
+processor.feature_extractor.do_normalize = True
 
 # --- 2. NOISE LOADING ---
 def load_noises():
@@ -65,7 +65,7 @@ def mix_on_the_fly(batch):
     
     mixed = clean + noise_aligned * (target_n_rms / (noise_rms + 1e-8))
     mixed = np.nan_to_num(mixed, nan=0.0, posinf=1.0, neginf=-1.0)
-    mixed = mixed / (np.abs(mixed).max() + 1e-8)   # normalize to [-1, 1]
+    mixed = mixed / (np.abs(mixed).max() + 1e-8)  
     assert not np.isnan(mixed).any(), "NaN survived sanitization!"
     
 
@@ -131,7 +131,6 @@ class DataCollatorCTCWithPadding:
             return_tensors="pt",
             return_attention_mask=True,
         )
-        batch["attention_mask"] = batch["attention_mask"].bool()
 
         labels_batch = self.processor.tokenizer.pad(
             label_features,
