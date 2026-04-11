@@ -239,12 +239,25 @@ print(f"Probe loss: {out.loss.item()}")  # Must NOT be 0.0 or nan
 print(f"Vocab size: {model.config.vocab_size}")
 print(f"Tokenizer vocab size: {processor.tokenizer.vocab_size}")
 
+# Find and print any samples that are borderline
+for sample in train_dataset.take(500):
+    audio_len = len(sample["input_values"])
+    label_len = len(sample["labels"])
+    output_len = audio_len
+    for kernel, stride in zip([10,3,3,3,3,2,2], [5,2,2,2,2,2,2]):
+        output_len = (output_len - kernel) // stride + 1
+    ratio = output_len / label_len
+    if ratio < 3:  # flag anything with tight margin
+        print(f"Tight sample — output_len: {output_len}, label_len: {label_len}, ratio: {ratio:.2f}, text: {sample['clean_text'][:80]}")
+
+
 sample_batch = next(iter(trainer.get_train_dataloader()))
 labels = sample_batch["labels"]
 valid_labels = labels[labels != -100]
 print(f"Max label id: {valid_labels.max().item()}")
 print(f"Min label id: {valid_labels.min().item()}")
 print(f"LM head output size: {model.lm_head.out_features}")
+
 
 # Also check output lengths vs label lengths per sample
 input_lengths = sample_batch["attention_mask"].long().sum(-1)
