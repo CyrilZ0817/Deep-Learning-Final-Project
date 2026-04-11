@@ -64,11 +64,6 @@ def mix_on_the_fly(batch):
     
     mixed = clean + noise_aligned * (target_n_rms / (noise_rms + 1e-8))
     
-    # --- FIX: Extreme Sanitization ---
-    # Ensure no NaNs and clip to valid audio range
-    mixed = np.nan_to_num(mixed)
-    if np.max(np.abs(mixed)) > 1.0:
-        mixed = mixed / (np.max(np.abs(mixed)) + 1e-8)
 
     batch["input_values"] = processor(mixed, sampling_rate=16000).input_values[0]
     batch["labels"] = processor.tokenizer(text).input_ids
@@ -154,7 +149,7 @@ training_args = TrainingArguments(
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
     
-    logging_steps=200,
+    logging_steps=50,
     eval_strategy="steps",
     logging_strategy="steps",
     warmup_steps=config["training"]["warmup_steps"],
