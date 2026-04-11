@@ -90,6 +90,7 @@ def mix_on_the_fly(batch):
 train_dataset = train_dataset.map(mix_on_the_fly)
 valid_dataset = valid_dataset.map(mix_on_the_fly)
 
+
 def compute_metrics(pred):
     pred_logits = pred.predictions
     pred_ids = np.argmax(pred_logits, axis=-1)
@@ -155,7 +156,8 @@ training_args = TrainingArguments(
     metric_for_best_model="cer",
     greater_is_better=False,
     load_best_model_at_end=True,
-    fp16=torch.cuda.is_available(),
+    fp16=False,
+    max_grad_norm=1.0,
     report_to="none"
 )
 
