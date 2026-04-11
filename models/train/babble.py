@@ -20,7 +20,7 @@ profile = config["training"]["types"][ACTIVE_TYPE]
 
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
-train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=42)
+train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=config)
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
 print(f"the keys of the dataset are {train_dataset.features.keys()}")
 
@@ -190,7 +190,10 @@ training_args = TrainingArguments(
     greater_is_better=False,
     fp16=False,
     max_grad_norm=1.0,
-    report_to="none"
+    report_to="none",
+    group_by_length=True,    
+    length_column_name="input_values", 
+    
 )
 
 trainer = Trainer(
