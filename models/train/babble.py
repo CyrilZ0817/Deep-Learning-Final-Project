@@ -63,9 +63,13 @@ def mix_on_the_fly(batch):
         noise_aligned = noise[start : start + len(clean)]
     
     mixed = clean + noise_aligned * (target_n_rms / (noise_rms + 1e-8))
+    mixed = mixed / (np.abs(mixed).max() + 1e-8)
     
 
-    batch["input_values"] = processor(mixed, sampling_rate=16000).input_values[0]
+    batch["input_values"] = np.array(
+        processor(mixed, sampling_rate=16000, return_tensors="np").input_values[0],
+        dtype=np.float32
+    )
     batch["labels"] = processor.tokenizer(text).input_ids
     
     # DEBUG PRINTS
@@ -81,6 +85,23 @@ def mix_on_the_fly(batch):
         print("!!! CRITICAL: Audio is silent!")
         
     return batch
+
+def check_batch(batch):
+    audio_len = len(batch["input_values"])
+    label_len = len(batch["labels"])
+    output_frames = (audio_len - 400) // 320
+    batch["is_valid"] = int(output_frames >= label_len + 2)
+    return batch
+
+# Check on a sample
+sample = train_dataset.take(200)
+sample = sample.map(check_batch)
+valid_count = sum(s["is_valid"] for s in sample)
+print(f"Valid samples: {valid_count}/200")
+
+train_dataset = train_dataset.map(mix_on_the_fly).filter(
+    lambda x: x["input_values"] is not None
+)
 
 train_dataset = train_dataset.map(mix_on_the_fly)
 valid_dataset = valid_dataset.map(mix_on_the_fly)
