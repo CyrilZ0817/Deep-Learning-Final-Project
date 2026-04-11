@@ -17,11 +17,22 @@ def is_short_enough(example):
 
 if __name__ == "__main__":
     for split in ("train", "valid"):
-        in_path  = os.path.join(DATA_PATH, split)
-        out_path = os.path.join(DATA_PATH, f"{split}_filtered")
-
         print(f"\n[{split}] Loading from {in_path} ...")
+        in_path = os.path.join(DATA_PATH, split)
         ds = load_from_disk(in_path)
+        
+        # print duration distribution
+        durations = [len(x["clean_audio"]) / TARGET_SR for x in ds]
+        buckets = [0, 3, 5, 7, 10, 15, 20, float("inf")]
+        labels  = ["<3s", "3-5s", "5-7s", "7-10s", "10-15s", "15-20s", ">20s"]
+        
+        print(f"\n[{split}] Duration distribution ({len(ds)} total):")
+        for i, label in enumerate(labels):
+            count = sum(buckets[i] <= d < buckets[i+1] for d in durations)
+            print(f"  {label:>8}: {count:>5} samples  ({100*count/len(ds):.1f}%)")
+            
+   
+        out_path = os.path.join(DATA_PATH, f"{split}_filtered")
         before = len(ds)
 
         print(f"[{split}] Filtering (max_words={MAX_WORDS}, max_sec={MAX_AUDIO_SEC}) ...")
