@@ -26,6 +26,7 @@ print(f"the keys of the dataset are {train_dataset.features.keys()}")
 
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
+processor.feature_extractor.do_normalize = False 
 
 # --- 2. NOISE LOADING ---
 def load_noises():
@@ -113,7 +114,6 @@ print(f"Valid samples: {valid_count}/200")
 class DataCollatorCTCWithPadding:
     processor: Wav2Vec2Processor
     padding: Union[bool, str] = True
-    processor.feature_extractor.do_normalize = False
 
     def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         input_features = [{"input_values": feature["input_values"]} for feature in features]
@@ -123,6 +123,7 @@ class DataCollatorCTCWithPadding:
             input_features,
             padding=self.padding,
             return_tensors="pt",
+            return_attention_mask=True,
         )
 
         labels_batch = self.processor.tokenizer.pad(
@@ -134,7 +135,6 @@ class DataCollatorCTCWithPadding:
         labels = labels_batch["input_ids"].masked_fill(
             labels_batch["attention_mask"].ne(1), -100
         )
-        batch["attention_mask"] = batch["attention_mask"]
         batch["labels"] = labels
         return batch
 
