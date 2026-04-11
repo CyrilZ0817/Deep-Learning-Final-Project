@@ -77,6 +77,21 @@ def mix_on_the_fly(batch):
 train_dataset = train_dataset.map(mix_on_the_fly)
 valid_dataset = valid_dataset.map(mix_on_the_fly)
 
+def compute_metrics(pred):
+    pred_logits = pred.predictions
+    pred_ids = np.argmax(pred_logits, axis=-1)
+
+    # Replace -100 (ignored tokens) with pad token id so tokenizer can decode
+    pred.label_ids[pred.label_ids == -100] = processor.tokenizer.pad_token_id
+
+    pred_str = processor.batch_decode(pred_ids)
+    # group_tokens=False is important for labels to maintain original structure
+    label_str = processor.batch_decode(pred.label_ids, group_tokens=False)
+
+    cer_score = cer(label_str, pred_str)
+
+    return {"cer": cer_score}
+
 # --- 4. FAIL-SAFE DATA COLLATOR ---
 @dataclass
 class DataCollatorCTCWithPadding:
@@ -122,10 +137,10 @@ training_args = TrainingArguments(
     eval_strategy="steps",
     eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
-    load_best_model_at_end=True,
-    fp16=torch.cuda.is_available(),
     metric_for_best_model="cer",
     greater_is_better=False,
+    load_best_model_at_end=True,
+    fp16=torch.cuda.is_available(),
     report_to="none"
 )
 
@@ -135,6 +150,7 @@ trainer = Trainer(
     train_dataset=train_dataset,
     eval_dataset=valid_dataset.take(100),
     data_collator=data_collator,
+    compute_metrics=compute_metrics
 )
 
 # --- 7. FINAL BATCH INSPECTION ---
