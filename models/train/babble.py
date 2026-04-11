@@ -63,7 +63,9 @@ def mix_on_the_fly(batch):
         noise_aligned = noise[start : start + len(clean)]
     
     mixed = clean + noise_aligned * (target_n_rms / (noise_rms + 1e-8))
-    mixed = mixed / (np.abs(mixed).max() + 1e-8)
+    mixed = np.nan_to_num(mixed, nan=0.0, posinf=1.0, neginf=-1.0)
+    mixed = mixed / (np.abs(mixed).max() + 1e-8)   # normalize to [-1, 1]
+    assert not np.isnan(mixed).any(), "NaN survived sanitization!"
     
 
     batch["input_values"] = np.array(
@@ -192,6 +194,22 @@ trainer = Trainer(
     data_collator=data_collator,
     compute_metrics=compute_metrics
 )
+
+# 1. Confirm attention_mask is present
+first_batch = next(iter(trainer.get_train_dataloader()))
+print("Batch keys:", first_batch.keys())
+print("Attention mask shape:", first_batch.get("attention_mask"))
+
+# 2. Check for NaN in raw audio
+for name, audio in LOADED_NOISES.items():
+    if np.isnan(audio).any():
+        print(f"NaN in noise file: {name}")
+
+# 3. Check a single mixed sample
+sample = next(iter(train_dataset))
+print("NaN in input_values:", np.isnan(sample["input_values"]).any())
+print("Input range:", np.min(sample["input_values"]), np.max(sample["input_values"]))
+
 
 # --- 7. FINAL BATCH INSPECTION ---
 print("--- DEBUG: Inspecting the first real batch for the model ---")
