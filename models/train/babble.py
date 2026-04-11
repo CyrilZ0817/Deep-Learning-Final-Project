@@ -90,44 +90,51 @@ def mix_on_the_fly(batch):
 train_dataset = train_dataset.map(mix_on_the_fly)
 valid_dataset = valid_dataset.map(mix_on_the_fly)
 
-
-def compute_metrics(pred):
-    pred_logits = pred.predictions
-    pred_ids = np.argmax(pred_logits, axis=-1)
-
-    # Replace -100 (ignored tokens) with pad token id so tokenizer can decode
-    pred.label_ids[pred.label_ids == -100] = processor.tokenizer.pad_token_id
-
-    pred_str = processor.batch_decode(pred_ids)
-    # group_tokens=False is important for labels to maintain original structure
-    label_str = processor.batch_decode(pred.label_ids, group_tokens=False)
-
-    cer_score = cer(label_str, pred_str)
-
-    return {"cer": cer_score}
-
 # --- 4. FAIL-SAFE DATA COLLATOR ---
 @dataclass
 class DataCollatorCTCWithPadding:
     processor: Wav2Vec2Processor
-    padding: bool = True
+    padding: Union[bool, str] = True
 
-    def __call__(self, features):
+    def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         input_features = [{"input_values": feature["input_values"]} for feature in features]
         label_features = [{"input_ids": feature["labels"]} for feature in features]
-        
-        batch = self.processor.pad(input_features, padding=self.padding, return_tensors="pt")
-        
-        # Standardize labels
-        labels_batch = self.processor.tokenizer.pad(label_features, padding=self.padding, return_tensors="pt")
-        
-        # Use a more conservative mask
-        labels = labels_batch["input_ids"].masked_fill(labels_batch["attention_mask"].ne(1), -100)
-        
+
+        batch = self.processor.pad(
+            input_features,
+            padding=self.padding,
+            return_tensors="pt",
+        )
+
+        labels_batch = self.processor.tokenizer.pad(
+            label_features,
+            padding=self.padding,
+            return_tensors="pt",
+        )
+
+        labels = labels_batch["input_ids"].masked_fill(
+            labels_batch["attention_mask"].ne(1), -100
+        )
+
         batch["labels"] = labels
         return batch
 
 data_collator = DataCollatorCTCWithPadding(processor=processor)
+
+# 9. metrics
+def compute_metrics(pred):
+    pred_logits = pred.predictions
+    pred_ids = np.argmax(pred_logits, axis=-1)
+
+    label_ids = pred.label_ids.copy()
+    label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
+
+    pred_str = processor.batch_decode(pred_ids)
+    label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
+
+    cer_scores = [cer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
+    avg_cer = float(np.mean(cer_scores))
+    return {"cer": avg_cer}
 
 # --- 5. MODEL WITH CTC STABILITY ---
 model = Wav2Vec2ForCTC.from_pretrained(
@@ -136,7 +143,7 @@ model = Wav2Vec2ForCTC.from_pretrained(
     pad_token_id=processor.tokenizer.pad_token_id,
     # --- FIX: ZERO INFINITY ---
     # This prevents 'nan' loss if the alignment is mathematically impossible
-    ctc_zero_infinity=True 
+    ctc_zero_infinity=False
 )
 model.freeze_feature_encoder()
 
