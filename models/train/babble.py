@@ -95,7 +95,8 @@ def is_ctc_valid(example):
     output_len = audio_len
     for kernel, stride in zip([10,3,3,3,3,2,2], [5,2,2,2,2,2,2]):
         output_len = (output_len - kernel) // stride + 1
-    return output_len >= label_len + 2
+    return output_len >= label_len * 4  # strict enough to survive padding
+
 
 train_dataset = train_dataset.map(mix_on_the_fly).filter(is_ctc_valid)
 valid_dataset = valid_dataset.map(mix_on_the_fly).filter(is_ctc_valid)
@@ -191,8 +192,6 @@ training_args = TrainingArguments(
     fp16=False,
     max_grad_norm=1.0,
     report_to="none",
-    group_by_length=True,    
-    length_column_name="input_values", 
     
 )
 
