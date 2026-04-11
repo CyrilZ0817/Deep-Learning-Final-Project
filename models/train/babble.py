@@ -19,9 +19,12 @@ ACTIVE_TYPE = "babble"
 profile = config["training"]["types"][ACTIVE_TYPE]
 
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
-train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
-train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=42)
-valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
+train_dataset = load_from_disk(os.path.join(DATA_PATH, "train"))
+valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid"))
+print(f"Loaded {len(train_dataset)} training samples and {len(valid_dataset)} validation samples."
+      )
+print(f"Sample training record keys: {train_dataset[0]}")
+
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
 
@@ -39,6 +42,10 @@ LOADED_NOISES = load_noises()
 NOISE_NAMES = list(LOADED_NOISES.keys())
 
 # --- 3. MIXING WITH NUMERICAL SANITIZATION ---
+# noise utils
+def rms(x):
+    return np.sqrt(np.mean(x ** 2) + 1e-8)
+
 def mix_on_the_fly(batch):
     clean = np.array(batch["clean_audio"], dtype=np.float32)
     text = str(batch["clean_text"]).upper().strip()
@@ -46,9 +53,9 @@ def mix_on_the_fly(batch):
     noise = LOADED_NOISES[random.choice(NOISE_NAMES)]
     snr = random.randint(profile["snr_range"]["min"], profile["snr_range"]["max"])
     
-    c_rms = np.sqrt(np.mean(clean**2) + 1e-8)
-    n_rms = np.sqrt(np.mean(noise**2) + 1e-8)
-    target_n_rms = c_rms / (10 ** (snr / 20))
+    clean_rms = rms(clean)
+    noise_rms = rms(noise)
+    target_n_rms = clean_rms / (10 ** (snr / 20))
     
     if len(clean) > len(noise):
         noise_aligned = np.tile(noise, (len(clean) // len(noise)) + 1)[:len(clean)]
@@ -56,7 +63,7 @@ def mix_on_the_fly(batch):
         start = random.randint(0, len(noise) - len(clean))
         noise_aligned = noise[start : start + len(clean)]
     
-    mixed = clean + noise_aligned * (target_n_rms / (n_rms + 1e-8))
+    mixed = clean + noise_aligned * (target_n_rms / (noise_rms + 1e-8))
     
     # --- FIX: Extreme Sanitization ---
     # Ensure no NaNs and clip to valid audio range
