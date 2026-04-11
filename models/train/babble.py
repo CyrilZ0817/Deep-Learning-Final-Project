@@ -135,8 +135,8 @@ training_args = TrainingArguments(
     
     logging_steps=200,
     eval_strategy="steps",
-    logging_stretegy="steps",
-    warmup_steps=500,
+    logging_strategy="steps",
+    warmup_steps=config["training"]["warmup_steps"],
     eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
     metric_for_best_model="cer",
