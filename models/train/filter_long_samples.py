@@ -17,9 +17,9 @@ def is_short_enough(example):
 
 if __name__ == "__main__":
     for split in ("train", "valid"):
-        print(f"\n[{split}] Loading from {in_path} ...")
         in_path = os.path.join(DATA_PATH, split)
         ds = load_from_disk(in_path)
+        print(f"\n[{split}] Loading from {in_path} ...")
         
         # print duration distribution
         durations = [len(x["clean_audio"]) / TARGET_SR for x in ds]
