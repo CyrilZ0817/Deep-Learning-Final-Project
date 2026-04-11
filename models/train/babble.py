@@ -131,7 +131,7 @@ class DataCollatorCTCWithPadding:
             return_tensors="pt",
             return_attention_mask=True,
         )
-        batch["attention_mask"] = batch["attention_mask"].long()
+        batch["attention_mask"] = batch["attention_mask"].bool()
 
         labels_batch = self.processor.tokenizer.pad(
             label_features,
@@ -256,32 +256,6 @@ for sample in train_dataset.take(500):
 model.train()
 batch = next(iter(trainer.get_train_dataloader()))
 batch = {k: v.to(model.device) for k, v in batch.items()}
-
-# Step through the model layer by layer
-with torch.no_grad():
-    # 1. Check feature encoder output
-    features = model.wav2vec2.feature_extractor(batch["input_values"])
-    print(f"Feature extractor output — NaN: {torch.isnan(features).any()}, range: [{features.min():.3f}, {features.max():.3f}]")
-    
-    # 2. Check after feature projection
-    features = features.transpose(1, 2)
-    features, _ = model.wav2vec2.feature_projection(features)
-    print(f"Feature projection output — NaN: {torch.isnan(features).any()}, range: [{features.min():.3f}, {features.max():.3f}]")
-    
-    # 3. Check encoder output
-    encoder_out = model.wav2vec2.encoder(features, attention_mask=batch["attention_mask"])
-    hidden = encoder_out.last_hidden_state
-    print(f"Encoder output — NaN: {torch.isnan(hidden).any()}, range: [{hidden.min():.3f}, {hidden.max():.3f}]")
-    
-    # 4. Check logits
-    logits = model.lm_head(hidden)
-    print(f"Logits — NaN: {torch.isnan(logits).any()}, range: [{logits.min():.3f}, {logits.max():.3f}]")
-
-    # 5. Check WITHOUT attention mask
-    encoder_out2 = model.wav2vec2.encoder(features, attention_mask=None)
-    hidden2 = encoder_out2.last_hidden_state
-    logits2 = model.lm_head(hidden2)
-    print(f"Logits WITHOUT mask — NaN: {torch.isnan(logits2).any()}, range: [{logits2.min():.3f}, {logits2.max():.3f}]")
 
 sample_batch = next(iter(trainer.get_train_dataloader()))
 labels = sample_batch["labels"]
