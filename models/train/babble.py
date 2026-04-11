@@ -165,6 +165,7 @@ model = Wav2Vec2ForCTC.from_pretrained(
 )
 model.freeze_feature_encoder()
 
+
 # --- 6. TRAINING ARGUMENTS ---
 training_args = TrainingArguments(
     output_dir=os.path.join(SCRIPT_DIR, profile["output_dir"]),
@@ -180,7 +181,6 @@ training_args = TrainingArguments(
     save_steps=config["training"]["save_steps"],
     metric_for_best_model="cer",
     greater_is_better=False,
-    load_best_model_at_end=True,
     fp16=False,
     max_grad_norm=1.0,
     report_to="none"
@@ -194,6 +194,7 @@ trainer = Trainer(
     data_collator=data_collator,
     compute_metrics=compute_metrics,
     callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+    
 )
 
 # 1. Confirm attention_mask is present
@@ -210,7 +211,6 @@ for name, audio in LOADED_NOISES.items():
 sample = next(iter(train_dataset))
 print("NaN in input_values:", np.isnan(sample["input_values"]).any())
 print("Input range:", np.min(sample["input_values"]), np.max(sample["input_values"]))
-
 
 # --- 7. FINAL BATCH INSPECTION ---
 print("--- DEBUG: Inspecting the first real batch for the model ---")
