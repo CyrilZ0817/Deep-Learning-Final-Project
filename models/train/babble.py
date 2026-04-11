@@ -20,7 +20,6 @@ profile = config["training"]["types"][ACTIVE_TYPE]
 
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
-train_raw = train_raw.filter(lambda x: len(x["clean_text"]) < 100)  # drop very long transcripts
 train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=config["training"]["seed"])
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
 print(f"the keys of the dataset are {train_dataset.features.keys()}")
@@ -236,6 +235,11 @@ model.train()
 with torch.no_grad():
     out = model(**{k: v.to(model.device) for k, v in first_batch.items()})
 print(f"Probe loss: {out.loss.item()}")  # Must NOT be 0.0 or nan
+
+print("attention_mask dtype:", first_batch["attention_mask"].dtype)  # need int64
+print("attention_mask sum:", first_batch["attention_mask"].sum(-1))  # need [84960, some_smaller_number]
+print("input_values dtype:", first_batch["input_values"].dtype)       # need float32
+print("labels sample:", first_batch["labels"][0][:10])                # spot check
 
 # --- DIAGNOSTIC: check label vs vocab bounds ---
 print(f"Vocab size: {model.config.vocab_size}")
