@@ -19,6 +19,7 @@ ACTIVE_TYPE = "babble"
 profile = config["training"]["types"][ACTIVE_TYPE]
 
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
+train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
 train_raw = train_raw.filter(lambda x: len(x["clean_text"]) < 100)  # drop very long transcripts
 train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=config["training"]["seed"])
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
