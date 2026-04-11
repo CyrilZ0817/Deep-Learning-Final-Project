@@ -40,11 +40,10 @@ training:
   per_device_eval_batch_size: 2
   num_train_epochs: 2
   learning_rate: 0.000001 # 1e-4
-  max_steps: 5000
+  max_steps: 15000
   logging_steps: 50
   warmup_steps: 500
   eval_steps: 250
   save_steps: 250
   save_total_limit: 3
-  gradient_accumulation_steps: 8
   metric_for_best_model: "cer"
