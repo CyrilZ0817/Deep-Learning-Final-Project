@@ -7,7 +7,7 @@ import soundfile as sf
 from dataclasses import dataclass
 from typing import Dict, List, Union
 from datasets import load_from_disk
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer, EarlyStoppingCallback
 from jiwer import cer
 
 # --- 1. SETUP & CONFIG ---
@@ -171,6 +171,8 @@ training_args = TrainingArguments(
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
+    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+    gradient_accumulation_steps=config["training"].get("gradient_accumulation_steps", 1),
     
     logging_steps=50,
     eval_strategy="steps",
