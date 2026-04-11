@@ -22,8 +22,7 @@ DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
 train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=42)
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
-print(f"Loaded {len(train_dataset)} training samples and {len(valid_dataset)} validation samples."
-      )
+print(f"the keys of the dataset are {train_dataset.features.keys()}")
 
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
