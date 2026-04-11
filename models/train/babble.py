@@ -72,6 +72,19 @@ def mix_on_the_fly(batch):
 
     batch["input_values"] = processor(mixed, sampling_rate=16000).input_values[0]
     batch["labels"] = processor.tokenizer(text).input_ids
+    
+    # DEBUG PRINTS
+    audio_len = len(batch["input_values"])
+    label_len = len(batch["labels"])
+    frames = audio_len // 320
+    
+    if frames <= label_len:
+        print(f"!!! CRITICAL: Audio too short! Frames: {frames}, Labels: {label_len}")
+        print(f"Text: {batch['clean_text']}")
+        
+    if np.abs(mixed).max() < 1e-5:
+        print("!!! CRITICAL: Audio is silent!")
+        
     return batch
 
 train_dataset = train_dataset.map(mix_on_the_fly)
