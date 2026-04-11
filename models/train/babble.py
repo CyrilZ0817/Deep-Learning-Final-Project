@@ -20,7 +20,7 @@ profile = config["training"]["types"][ACTIVE_TYPE]
 
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
-train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=config)
+train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=config["training"]["seed"])
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
 print(f"the keys of the dataset are {train_dataset.features.keys()}")
 
