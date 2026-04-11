@@ -143,7 +143,7 @@ model = Wav2Vec2ForCTC.from_pretrained(
     pad_token_id=processor.tokenizer.pad_token_id,
     # --- FIX: ZERO INFINITY ---
     # This prevents 'nan' loss if the alignment is mathematically impossible
-    ctc_zero_infinity=False
+    ctc_zero_infinity=True
 )
 model.freeze_feature_encoder()
 
