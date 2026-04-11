@@ -23,7 +23,6 @@ train_dataset = load_from_disk(os.path.join(DATA_PATH, "train"))
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid"))
 print(f"Loaded {len(train_dataset)} training samples and {len(valid_dataset)} validation samples."
       )
-print(f"Sample training record keys: {train_dataset[0]}")
 
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
