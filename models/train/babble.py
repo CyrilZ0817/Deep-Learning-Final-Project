@@ -86,6 +86,9 @@ def mix_on_the_fly(batch):
         
     return batch
 
+train_dataset = train_dataset.map(mix_on_the_fly)
+valid_dataset = valid_dataset.map(mix_on_the_fly)
+
 def check_batch(batch):
     audio_len = len(batch["input_values"])
     label_len = len(batch["labels"])
@@ -102,9 +105,6 @@ print(f"Valid samples: {valid_count}/200")
 train_dataset = train_dataset.map(mix_on_the_fly).filter(
     lambda x: x["input_values"] is not None
 )
-
-train_dataset = train_dataset.map(mix_on_the_fly)
-valid_dataset = valid_dataset.map(mix_on_the_fly)
 
 # --- 4. FAIL-SAFE DATA COLLATOR ---
 @dataclass
