@@ -89,10 +89,16 @@ def mix_on_the_fly(batch):
         
     return batch
 
-train_dataset = train_dataset.map(mix_on_the_fly).filter(
-    lambda x: x["input_values"] is not None
-)
-valid_dataset = valid_dataset.map(mix_on_the_fly)
+def is_ctc_valid(example):
+    audio_len = len(example["input_values"])
+    label_len = len(example["labels"])
+    output_len = audio_len
+    for kernel, stride in zip([10,3,3,3,3,2,2], [5,2,2,2,2,2,2]):
+        output_len = (output_len - kernel) // stride + 1
+    return output_len >= label_len + 2
+
+train_dataset = train_dataset.map(mix_on_the_fly).filter(is_ctc_valid)
+valid_dataset = valid_dataset.map(mix_on_the_fly).filter(is_ctc_valid)
 
 def check_batch(batch):
     audio_len = len(batch["input_values"])
@@ -124,6 +130,7 @@ class DataCollatorCTCWithPadding:
             return_tensors="pt",
             return_attention_mask=True,
         )
+        batch["attention_mask"] = batch["attention_mask"].long()
 
         labels_batch = self.processor.tokenizer.pad(
             label_features,
@@ -222,6 +229,11 @@ print(f"Non-masked labels in first sample: {(first_batch['labels'][0] != -100).s
 
 if (first_batch['labels'] != -100).sum() == 0:
     print("!!! CRITICAL: THE ENTIRE BATCH IS MASKED. TRAINING WILL FAIL.")
+
+model.train()
+with torch.no_grad():
+    out = model(**{k: v.to(model.device) for k, v in first_batch.items()})
+print(f"Probe loss: {out.loss.item()}")  # Must NOT be 0.0 or nan
 
 print("--- Starting Trainer ---")
 trainer.train()

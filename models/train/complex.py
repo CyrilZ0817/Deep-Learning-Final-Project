@@ -171,7 +171,6 @@ training_args = TrainingArguments(
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
-    gradient_accumulation_steps=config["training"].get("gradient_accumulation_steps", 1),
     
     logging_steps=50,
     eval_strategy="steps",
