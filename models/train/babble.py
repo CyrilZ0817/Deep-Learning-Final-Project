@@ -88,10 +88,13 @@ def mix_on_the_fly(batch):
         
     return batch
 
-train_dataset = train_dataset.map(mix_on_the_fly)
+train_dataset = train_dataset.map(mix_on_the_fly).filter(
+    lambda x: x["input_values"] is not None
+)
 valid_dataset = valid_dataset.map(mix_on_the_fly)
 
 def check_batch(batch):
+    print(f"Checking the keys of batch {batch.keys()}")
     audio_len = len(batch["input_values"])
     label_len = len(batch["labels"])
     output_frames = (audio_len - 400) // 320
@@ -104,15 +107,13 @@ sample = sample.map(check_batch)
 valid_count = sum(s["is_valid"] for s in sample)
 print(f"Valid samples: {valid_count}/200")
 
-train_dataset = train_dataset.map(mix_on_the_fly).filter(
-    lambda x: x["input_values"] is not None
-)
 
 # --- 4. FAIL-SAFE DATA COLLATOR ---
 @dataclass
 class DataCollatorCTCWithPadding:
     processor: Wav2Vec2Processor
     padding: Union[bool, str] = True
+    processor.feature_extractor.do_normalize = False
 
     def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         input_features = [{"input_values": feature["input_values"]} for feature in features]
@@ -133,7 +134,7 @@ class DataCollatorCTCWithPadding:
         labels = labels_batch["input_ids"].masked_fill(
             labels_batch["attention_mask"].ne(1), -100
         )
-
+        batch["attention_mask"] = batch["attention_mask"]
         batch["labels"] = labels
         return batch
 
