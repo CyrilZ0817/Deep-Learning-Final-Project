@@ -171,7 +171,6 @@ training_args = TrainingArguments(
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
-    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     gradient_accumulation_steps=config["training"].get("gradient_accumulation_steps", 1),
     
     logging_steps=50,
@@ -194,7 +193,8 @@ trainer = Trainer(
     train_dataset=train_dataset,
     eval_dataset=valid_dataset.take(100),
     data_collator=data_collator,
-    compute_metrics=compute_metrics
+    compute_metrics=compute_metrics,
+    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
 )
 
 # 1. Confirm attention_mask is present
