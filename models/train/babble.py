@@ -95,7 +95,6 @@ train_dataset = train_dataset.map(mix_on_the_fly).filter(
 valid_dataset = valid_dataset.map(mix_on_the_fly)
 
 def check_batch(batch):
-    print(f"Checking the keys of batch {batch.keys()}")
     audio_len = len(batch["input_values"])
     label_len = len(batch["labels"])
     output_frames = (audio_len - 400) // 320
