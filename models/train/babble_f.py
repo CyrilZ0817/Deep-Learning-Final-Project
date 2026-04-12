@@ -26,14 +26,23 @@ with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r", encoding="utf-8") as f:
 ACTIVE_TYPE = "babble"
 profile = config["training"]["types"][ACTIVE_TYPE]
 
-SEED = 42
+SEED = config["training"]["seed"]
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
-train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
-valid_raw = load_from_disk(os.path.join(DATA_PATH, "valid"))
+full_ds = load_from_disk(DATA_PATH)
+print(f"Loaded combined dataset: {len(full_ds)} samples.")
+
+# 2. Create the split on the fly
+# Adjust test_size to match your original validation ratio (e.g., 0.1 for 10%)
+split_ds = full_ds.train_test_split(test_size=0.1, seed=SEED)
+
+train_raw = split_ds["train"]
+valid_raw = split_ds["test"]
+
+print(f"Split complete! Train: {len(train_raw)}, Valid: {len(valid_raw)}")
 
 train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=1000, seed=SEED)
 valid_dataset = valid_raw.to_iterable_dataset()
