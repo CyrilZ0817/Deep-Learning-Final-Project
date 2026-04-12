@@ -1,92 +1,52 @@
-import io
 import os
-import yaml
+import random
 import numpy as np
-import soundfile as sf
 import torch
-
+import yaml
+import soundfile as sf
 from dataclasses import dataclass
-from typing import Any, Dict, List, Union
+from typing import Dict, List, Union
+from datasets import load_from_disk
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
+from jiwer import wer
 
-from datasets import load_dataset, Audio
-from transformers import (
-    Wav2Vec2Processor,
-    Wav2Vec2ForCTC,
-    TrainingArguments,
-    Trainer,
-)
-from jiwer import cer
-
-# --- LOAD CONFIG ---
-script_dir = os.path.dirname(os.path.abspath(__file__))
-config_path = os.path.join(script_dir, "config.yaml")
-
-with open(config_path, "r") as f:
+# --- 1. SETUP & CONFIG ---
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
 
-ACTIVE_TYPE = "baseline"  
+ACTIVE_TYPE = "baseline" 
+profile = config["training"]["types"][ACTIVE_TYPE]
 
-# load dataset
-train_dataset = load_dataset(
-    config["dataset"]["name"], 
-    config["dataset"]["subset"], 
-    split=config["dataset"]["train_split"],
-    streaming=True 
-)
-valid_dataset = load_dataset(
-    config["dataset"]["name"], 
-    config["dataset"]["subset"], 
-    split=config["dataset"]["valid_split"],
-    streaming=True 
-)
+SEED = config["training"]["seed"]
 
-train_dataset = train_dataset.cast_column("audio", Audio(decode=False))
-valid_dataset = valid_dataset.cast_column("audio", Audio(decode=False))
+DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
+train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
+train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=SEED)
+valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
+print(f"the keys of the dataset are {train_dataset.features.keys()}")
 
-# --- PROCESSOR & AUDIO HELPER ---
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
-target_sr = config["dataset"]["target_sampling_rate"]
 
-def load_audio_from_record(batch):
-    audio_info = batch["audio"]
-    
-    if audio_info["bytes"] is not None:
-        audio, sr = sf.read(io.BytesIO(audio_info["bytes"]))
-    else:
-        audio, sr = sf.read(audio_info["path"])
 
-    if len(audio.shape) > 1:
-        audio = audio.mean(axis=1)
-
-     # Standardize Sample Rate (from config)
-    target_sr = config["dataset"]["target_sampling_rate"]
-    if sr != target_sr:
-        import librosa
-        audio = librosa.resample(audio.astype("float32"), orig_sr=sr, target_sr=target_sr)
-        sr = target_sr
-
-    audio = audio.astype("float32")
-
-    batch["speech"] = audio.astype("float32")
-    batch["sampling_rate"] = sr
-    batch["target_text"] = batch["text"]
+def check_batch(batch):
+    audio_len = len(batch["input_values"])
+    label_len = len(batch["labels"])
+    output_frames = (audio_len - 400) // 320
+    batch["is_valid"] = int(output_frames >= label_len + 2)
     return batch
 
-train_dataset = train_dataset.map(load_audio_from_record)
-valid_dataset = valid_dataset.map(load_audio_from_record)
+# Check on a sample
+sample = train_dataset.take(200)
+sample = sample.map(check_batch)
+valid_count = sum(s["is_valid"] for s in sample)
+print(f"Valid samples: {valid_count}/200")
 
-def prepare_dataset(batch):
-    batch["input_values"] = processor(
-        batch["speech"],
-        sampling_rate=batch["sampling_rate"]
-    ).input_values[0]
-    batch["labels"] = processor.tokenizer(batch["target_text"]).input_ids
-    return batch
+train_dataset = train_dataset.map(mix_on_the_fly).filter(
+    lambda x: x["input_values"] is not None
+)
 
-train_dataset = train_dataset.map(prepare_dataset, remove_columns=train_dataset.column_names)
-valid_dataset = valid_dataset.map(prepare_dataset, remove_columns=valid_dataset.column_names)
-
-# --- COLLATOR & METRICS ---
+# --- 4. FAIL-SAFE DATA COLLATOR ---
 @dataclass
 class DataCollatorCTCWithPadding:
     processor: Wav2Vec2Processor
@@ -96,52 +56,72 @@ class DataCollatorCTCWithPadding:
         input_features = [{"input_values": feature["input_values"]} for feature in features]
         label_features = [{"input_ids": feature["labels"]} for feature in features]
 
-        batch = self.processor.pad(input_features, padding=self.padding, return_tensors="pt")
-        labels_batch = self.processor.tokenizer.pad(label_features, padding=self.padding, return_tensors="pt")
-        
-        labels = labels_batch["input_ids"].masked_fill(labels_batch["attention_mask"].ne(1), -100)
+        batch = self.processor.pad(
+            input_features,
+            padding=self.padding,
+            return_tensors="pt",
+        )
+
+        labels_batch = self.processor.tokenizer.pad(
+            label_features,
+            padding=self.padding,
+            return_tensors="pt",
+        )
+
+        labels = labels_batch["input_ids"].masked_fill(
+            labels_batch["attention_mask"].ne(1), -100
+        )
+
         batch["labels"] = labels
         return batch
 
 data_collator = DataCollatorCTCWithPadding(processor=processor)
 
+# 9. metrics
 def compute_metrics(pred):
     pred_logits = pred.predictions
     pred_ids = np.argmax(pred_logits, axis=-1)
-    pred.label_ids[pred.label_ids == -100] = processor.tokenizer.pad_token_id
+
+    label_ids = pred.label_ids.copy()
+    label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
 
     pred_str = processor.batch_decode(pred_ids)
-    label_str = processor.batch_decode(pred.label_ids, group_tokens=False)
+    label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
-    cer_scores = [cer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
-    return {"cer": float(np.mean(cer_scores))}
+    wer_scores = [wer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
+    avg_wer = float(np.mean(wer_scores))
+    return {"wer": avg_wer}
 
-# --- MODEL & TRAINING ---
+# --- 5. MODEL WITH CTC STABILITY ---
 model = Wav2Vec2ForCTC.from_pretrained(
-    config["model"]["name"],
+    config["model"]["name"], 
     ctc_loss_reduction=config["model"]["ctc_loss_reduction"],
     pad_token_id=processor.tokenizer.pad_token_id,
+    # --- FIX: ZERO INFINITY ---
+    # This prevents 'nan' loss if the alignment is mathematically impossible
+    ctc_zero_infinity=True
 )
 model.freeze_feature_encoder()
 
+# --- 6. TRAINING ARGUMENTS ---
 training_args = TrainingArguments(
-    output_dir= os.path.join(script_dir, config["training"]["types"][ACTIVE_TYPE]["output_dir"],),
+    output_dir=os.path.join(SCRIPT_DIR, profile["output_dir"]),
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
-    per_device_eval_batch_size=config["training"]["per_device_eval_batch_size"],
-    max_steps=config["training"]["max_steps"],                
-    learning_rate=config["training"]["learning_rate"],
-    logging_steps=config["training"]["logging_steps"],            
+    max_steps=config["training"]["max_steps"],
+    learning_rate=float(config["training"]["learning_rate"]),
     
-    fp16=torch.cuda.is_available(),
-    report_to="none",
-    load_best_model_at_end=True,
-    greater_is_better=False,
-    
-    eval_strategy="steps",       
-    save_strategy="steps",       
-    eval_steps=config["training"]["eval_steps"],                
+    logging_steps=50,
+    eval_strategy="steps",
+    logging_strategy="steps",
+    warmup_steps=config["training"]["warmup_steps"],
+    eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
-    metric_for_best_model=config["training"]["metric_for_best_model"],
+    metric_for_best_model="wer",
+    greater_is_better=False,
+    load_best_model_at_end=True,
+    fp16=False,
+    max_grad_norm=1.0,
+    report_to="none"
 )
 
 trainer = Trainer(
@@ -149,15 +129,36 @@ trainer = Trainer(
     args=training_args,
     train_dataset=train_dataset,
     eval_dataset=valid_dataset.take(100),
-    processing_class=processor,
     data_collator=data_collator,
-    compute_metrics=compute_metrics,
+    compute_metrics=compute_metrics
 )
 
-# --- EXECUTION ---
-trainer.train()
-metrics = trainer.evaluate(eval_dataset=valid_dataset.take(100))
-print(f"\nFinal evaluation: {metrics}")
+# 1. Confirm attention_mask is present
+first_batch = next(iter(trainer.get_train_dataloader()))
+print("Batch keys:", first_batch.keys())
+print("Attention mask shape:", first_batch.get("attention_mask"))
 
-trainer.save_model(config["training"]["types"][ACTIVE_TYPE]["output_dir"])
-processor.save_pretrained(config["training"]["types"][ACTIVE_TYPE]["output_dir"])
+# 2. Check for NaN in raw audio
+for name, audio in LOADED_NOISES.items():
+    if np.isnan(audio).any():
+        print(f"NaN in noise file: {name}")
+
+# 3. Check a single mixed sample
+sample = next(iter(train_dataset))
+print("NaN in input_values:", np.isnan(sample["input_values"]).any())
+print("Input range:", np.min(sample["input_values"]), np.max(sample["input_values"]))
+
+
+# --- 7. FINAL BATCH INSPECTION ---
+print("--- DEBUG: Inspecting the first real batch for the model ---")
+dataloader = trainer.get_train_dataloader()
+first_batch = next(iter(dataloader))
+print(f"Batch Inputs Shape: {first_batch['input_values'].shape}")
+print(f"Batch Labels Shape: {first_batch['labels'].shape}")
+print(f"Non-masked labels in first sample: {(first_batch['labels'][0] != -100).sum()}")
+
+if (first_batch['labels'] != -100).sum() == 0:
+    print("!!! CRITICAL: THE ENTIRE BATCH IS MASKED. TRAINING WILL FAIL.")
+
+print("--- Starting Trainer ---")
+trainer.train()
