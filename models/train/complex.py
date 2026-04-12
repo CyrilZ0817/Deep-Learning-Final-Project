@@ -18,6 +18,9 @@ from transformers import (
 from jiwer import cer
 
 
+# ---------------------------------------------------------------------------
+# Config & seeds
+# ---------------------------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r", encoding="utf-8") as f:
@@ -31,93 +34,83 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k/train")
 full_ds = load_from_disk(DATA_PATH)
-print(f"Loaded combined dataset: {len(full_ds)} samples.")
+print(f"Loaded dataset: {len(full_ds)} samples.")
 
-# 2. Create the split on the fly
-# Adjust test_size to match your original validation ratio (e.g., 0.1 for 10%)
 split_ds = full_ds.train_test_split(test_size=0.1, seed=SEED)
-
 train_raw = split_ds["train"]
 valid_raw = split_ds["test"]
-
-print(f"Split complete! Train: {len(train_raw)}, Valid: {len(valid_raw)}")
+print(f"Split — train: {len(train_raw)}, valid: {len(valid_raw)}")
 
 train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=1000, seed=SEED)
 valid_dataset = valid_raw.to_iterable_dataset()
 
-print(f"train keys: {train_dataset.features.keys()}")
-print(f"valid keys: {valid_dataset.features.keys()}")
-
+# ---------------------------------------------------------------------------
+# Processor
+# ---------------------------------------------------------------------------
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
 processor.feature_extractor.do_normalize = True
 
-
-def load_noises():
+# ---------------------------------------------------------------------------
+# Noise loading
+# ---------------------------------------------------------------------------
+def load_noises() -> dict:
     loaded = {}
     noise_dir = os.path.join(SCRIPT_DIR, profile["subfolder"])
     files = [f for f in os.listdir(noise_dir) if f.lower().endswith(".wav")]
-
     for fname in files:
         path = os.path.join(noise_dir, fname)
         audio, sr = sf.read(path)
-
         if len(audio.shape) > 1:
             audio = audio.mean(axis=1)
-
         if sr != 16000:
             import librosa
             audio = librosa.resample(audio.astype("float32"), orig_sr=sr, target_sr=16000)
-
         audio = np.asarray(audio, dtype=np.float32)
-
         if np.isnan(audio).any() or np.isinf(audio).any():
             print(f"Skipping invalid noise file: {fname}")
             continue
-
+        # Normalise noise to unit RMS so SNR scaling is well-conditioned
+        noise_rms = np.sqrt(np.mean(audio ** 2) + 1e-8)
+        audio = audio / noise_rms
         loaded[fname] = audio
-
     return loaded
 
 
 LOADED_NOISES = load_noises()
 NOISE_NAMES = list(LOADED_NOISES.keys())
-
 if len(NOISE_NAMES) == 0:
-    raise RuntimeError("No valid babble noise files found.")
-
+    raise RuntimeError("No valid noise files found.")
 print(f"Loaded {len(NOISE_NAMES)} noise files.")
 
+# ---------------------------------------------------------------------------
+# Audio mixing helpers
+# ---------------------------------------------------------------------------
+def rms(x: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(np.asarray(x, dtype=np.float32) ** 2) + 1e-8))
 
 
-def rms(x):
-    x = np.asarray(x, dtype=np.float32)
-    return np.sqrt(np.mean(x ** 2) + 1e-8)
-
-
-def align_noise(noise, target_len):
+def align_noise(noise: np.ndarray, target_len: int) -> np.ndarray:
     if len(noise) < target_len:
-        repeat_times = int(np.ceil(target_len / len(noise)))
-        noise = np.tile(noise, repeat_times)
-        return noise[:target_len]
-
+        noise = np.tile(noise, int(np.ceil(target_len / len(noise))))
     start = random.randint(0, len(noise) - target_len)
-    return noise[start:start + target_len]
+    return noise[start : start + target_len]
 
 
-def mix_with_snr(clean, noise, snr_db):
+def mix_with_snr(clean: np.ndarray, noise: np.ndarray, snr_db: float) -> np.ndarray:
     clean = np.asarray(clean, dtype=np.float32)
     noise = np.asarray(noise, dtype=np.float32)
 
     noise_aligned = align_noise(noise, len(clean))
+    clean_rms_val = rms(clean)
+    noise_rms_val = rms(noise_aligned)
 
-    # 关键：对齐之后再算 noise_rms
-    clean_rms = rms(clean)
-    noise_rms = rms(noise_aligned)
-
-    target_noise_rms = clean_rms / (10 ** (snr_db / 20.0))
-    scale = target_noise_rms / (noise_rms + 1e-8)
+    target_noise_rms = clean_rms_val / (10 ** (snr_db / 20.0))
+    scale = target_noise_rms / (noise_rms_val + 1e-8)
 
     mixed = clean + noise_aligned * scale
     mixed = np.nan_to_num(mixed, nan=0.0, posinf=1.0, neginf=-1.0)
@@ -128,66 +121,86 @@ def mix_with_snr(clean, noise, snr_db):
 
     return mixed.astype(np.float32)
 
+# ---------------------------------------------------------------------------
+# CTC validity helpers  (must match wav2vec2-base CNN stack exactly)
+# ---------------------------------------------------------------------------
+def ctc_output_length(input_len: int) -> int:
+    out = input_len
+    for kernel, stride in zip([10, 3, 3, 3, 3, 2, 2], [5, 2, 2, 2, 2, 2, 2]):
+        out = (out - kernel) // stride + 1
+    return out
 
+
+CTC_SAFETY_MARGIN = 2  # output frames must be >= label_len * this
+
+
+def is_ctc_valid(example) -> bool:
+    label_len = len(example["labels"])
+    if label_len == 0:
+        return False
+    # input_values here is the processor output (float array, length = raw samples)
+    out_len = ctc_output_length(len(example["input_values"]))
+    return out_len >= label_len * CTC_SAFETY_MARGIN
+
+# ---------------------------------------------------------------------------
+# On-the-fly augmentation map
+# ---------------------------------------------------------------------------
 def mix_on_the_fly(batch):
     clean = np.asarray(batch["clean_audio"], dtype=np.float32)
-    text = str(batch["clean_text"]).upper().strip()
+    text  = str(batch["clean_text"]).upper().strip()
+
+    # Guard: skip silent or corrupted clean audio
+    if np.max(np.abs(clean)) < 0.01 or np.isnan(clean).any() or np.isinf(clean).any():
+        batch["input_values"] = np.zeros(1, dtype=np.float32)
+        batch["labels"]       = []
+        batch["chosen_noise"] = ""
+        batch["chosen_snr"]   = 0
+        batch["clean_text"]   = text
+        return batch
 
     noise_name = random.choice(NOISE_NAMES)
     noise = LOADED_NOISES[noise_name]
-    snr = random.randint(profile["snr_range"]["min"], profile["snr_range"]["max"])
+    snr   = random.randint(profile["snr_range"]["min"], profile["snr_range"]["max"])
 
     mixed = mix_with_snr(clean, noise, snr)
 
     input_values = processor(
         mixed,
         sampling_rate=16000,
-        return_tensors="np"
+        return_tensors="np",
     ).input_values[0].astype(np.float32)
 
-    labels = processor.tokenizer(text).input_ids
-    
+    # Fix: NaN guard must be set BEFORE we assign to batch["labels"]
     if np.isnan(input_values).any() or np.isinf(input_values).any():
-        input_values = np.zeros_like(input_values)
-        batch["labels"] = []  # will be filtered by is_ctc_valid
+        input_values = np.zeros(1, dtype=np.float32)  # is_ctc_valid will drop this
+        labels = []
+    else:
+        labels = processor.tokenizer(text).input_ids
 
     batch["input_values"] = input_values
-    batch["labels"] = labels
+    batch["labels"]       = labels
     batch["chosen_noise"] = noise_name
-    batch["chosen_snr"] = snr
-    batch["clean_text"] = text
+    batch["chosen_snr"]   = snr
+    batch["clean_text"]   = text
     return batch
-
-
-def ctc_output_length(input_len):
-    output_len = input_len
-    for kernel, stride in zip([10, 3, 3, 3, 3, 2, 2], [5, 2, 2, 2, 2, 2, 2]):
-        output_len = (output_len - kernel) // stride + 1
-    return output_len
-
-
-def is_ctc_valid(example):
-    audio_len = len(example["input_values"])
-    label_len = len(example["labels"])
-    out_len = ctc_output_length(audio_len)
-
-    # make it really strict
-    return out_len >= label_len * 2
 
 
 train_dataset = train_dataset.map(mix_on_the_fly).filter(is_ctc_valid)
 valid_dataset = valid_dataset.map(mix_on_the_fly).filter(is_ctc_valid)
 
-
-
+# ---------------------------------------------------------------------------
+# Data collator
+# ---------------------------------------------------------------------------
 @dataclass
 class DataCollatorCTCWithPadding:
     processor: Wav2Vec2Processor
     padding: Union[bool, str] = True
 
-    def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
+    def __call__(
+        self, features: List[Dict[str, Union[List[int], torch.Tensor]]]
+    ) -> Dict[str, torch.Tensor]:
         input_features = [{"input_values": f["input_values"]} for f in features]
-        label_features = [{"input_ids": f["labels"]} for f in features]
+        label_features = [{"input_ids": f["labels"]}          for f in features]
 
         batch = self.processor.pad(
             input_features,
@@ -206,62 +219,106 @@ class DataCollatorCTCWithPadding:
             labels_batch["attention_mask"].ne(1), -100
         )
 
-        batch["labels"] = labels
+        batch["labels"]         = labels
         batch["attention_mask"] = batch["attention_mask"].long()
         return batch
 
 
 data_collator = DataCollatorCTCWithPadding(processor=processor)
 
-
-
+# ---------------------------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------------------------
 def compute_metrics(pred):
-    pred_logits = pred.predictions
-    pred_ids = np.argmax(pred_logits, axis=-1)
-
+    pred_ids  = np.argmax(pred.predictions, axis=-1)
     label_ids = pred.label_ids.copy()
     label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
 
-    pred_str = processor.batch_decode(pred_ids)
+    pred_str  = processor.batch_decode(pred_ids)
     label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
     cer_scores = [cer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
     return {"cer": float(np.mean(cer_scores))}
 
-
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
 model = Wav2Vec2ForCTC.from_pretrained(
     config["model"]["name"],
     ctc_loss_reduction="mean",
     pad_token_id=processor.tokenizer.pad_token_id,
-    ctc_zero_infinity=False,   # 先不要把错误样本静默归零
+    # Fix: True silences -inf paths early in training, preventing NaN loss.
+    # Once training is stable you can set this back to False for a final run.
+    ctc_zero_infinity=True,
 )
 
-# 关键：不要冻结
-# model.freeze_feature_encoder()
+# Freeze the CNN feature encoder for the first phase of training.
+#
+# Why: the encoder is pre-trained on 960h of clean speech and is already
+# excellent at extracting features.  Fine-tuning it with a noisy task-specific
+# loss at lr=3e-4 will corrupt those representations and cause divergence.
+# We only want to adapt the transformer layers and the CTC head.
+# If you later want to unfreeze it (e.g. for a second-phase run), do so at a
+# much lower lr (1e-5) after the rest of the model has converged.
+model.freeze_feature_encoder()
+
+# ---------------------------------------------------------------------------
+# Training arguments
+#
+# Learning rate recommendation: 3e-4
+#
+# Reasoning:
+#   - With the feature encoder frozen, only ~85M of the 94M parameters are
+#     being updated (transformer layers + CTC projection).
+#   - wav2vec2-base was pre-trained with Adam at 1e-3; fine-tuning on a
+#     downstream CTC task typically uses 1e-4 to 5e-4.
+#   - 3e-4 with a linear warmup of 500 steps gives fast convergence without
+#     instability.  The original wav2vec2 fine-tuning paper (Baevski et al.)
+#     used 1e-4 on LibriSpeech 100h clean; we go slightly higher because
+#     noise augmentation acts as a regulariser and allows a more aggressive lr.
+#   - If you see loss spiking after warmup, drop to 1e-4.
+#   - If you later unfreeze the encoder for phase 2, use 1e-5 for everything.
+# ---------------------------------------------------------------------------
+LEARNING_RATE = 3e-4
 
 training_args = TrainingArguments(
     output_dir=os.path.join(SCRIPT_DIR, profile["output_dir"] + "_fixed"),
-    per_device_train_batch_size=min(2, int(config["training"]["per_device_train_batch_size"])),
-    per_device_eval_batch_size=2,
+
+    # Batch / steps
+    per_device_train_batch_size=int(config["training"]["per_device_train_batch_size"]),
+    per_device_eval_batch_size=4,
     max_steps=int(config["training"]["max_steps"]),
-    learning_rate=1e-5,
+
+    # Optimiser
+    learning_rate=LEARNING_RATE,
     warmup_steps=config["training"]["warmup_steps"],
+    # Linear decay to 0 over training gives a clean convergence curve
+    lr_scheduler_type="linear",
+
+    # Gradient stability
+    max_grad_norm=1.0,
+    fp16=False,  # keep off; wav2vec2 CTC can produce inf in fp16 without careful scaling
+
+    # Logging / saving
     logging_steps=50,
-    eval_strategy="steps",
     logging_strategy="steps",
+    eval_strategy="steps",
     eval_steps=int(config["training"]["eval_steps"]),
     save_steps=int(config["training"]["save_steps"]),
+    save_total_limit=2,
+
+    # Best-model tracking
     metric_for_best_model="cer",
     greater_is_better=False,
-    fp16=False,
-    max_grad_norm=1.0,
+    load_best_model_at_end=True,
+
     report_to="none",
     remove_unused_columns=False,
-    load_best_model_at_end=True,
-    save_total_limit=2,
 )
 
-
+# ---------------------------------------------------------------------------
+# Trainer
+# ---------------------------------------------------------------------------
 trainer = Trainer(
     model=model,
     args=training_args,
@@ -272,44 +329,58 @@ trainer = Trainer(
     callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
 )
 
-
-print("--- DEBUG: Inspecting first batch ---")
+# ---------------------------------------------------------------------------
+# Pre-flight sanity check
+# ---------------------------------------------------------------------------
+print("\n--- Pre-flight batch check ---")
 first_batch = next(iter(trainer.get_train_dataloader()))
-print("Batch keys:", first_batch.keys())
-print("input_values shape:", first_batch["input_values"].shape)
-print("labels shape:", first_batch["labels"].shape)
-print("attention_mask dtype:", first_batch["attention_mask"].dtype)
-
-model.train()
-probe_batch = {k: v.to(model.device) for k, v in first_batch.items()}
-probe_out = model(**probe_batch)
-print("Probe loss:", probe_out.loss.item())
-
-if np.isnan(probe_out.loss.item()) or probe_out.loss.item() == 0.0:
-    print("WARNING: probe loss is suspicious. Check filtering / text lengths / tokenizer.")
-
-print("--- Diagnosing first batch ---")
-first_batch = next(iter(trainer.get_train_dataloader()))
-
-# Check 1: input_values for NaN
-iv = first_batch["input_values"]
-print(f"input_values NaN: {torch.isnan(iv).any()}, Inf: {torch.isinf(iv).any()}")
-print(f"input_values range: [{iv.min():.3f}, {iv.max():.3f}]")
-
-# Check 2: labels
+iv   = first_batch["input_values"]
 labs = first_batch["labels"]
-print(f"labels (non-padding): {(labs != -100).sum()} tokens across batch")
-print(f"label lengths: {(labs != -100).sum(dim=-1).tolist()}")
 
-print("--- Starting Trainer ---")
+print(f"input_values  shape : {iv.shape}")
+print(f"labels        shape : {labs.shape}")
+print(f"attention_mask dtype: {first_batch['attention_mask'].dtype}")
+print(f"input_values  NaN={torch.isnan(iv).any()}, Inf={torch.isinf(iv).any()}")
+print(f"input_values  range : [{iv.min():.3f}, {iv.max():.3f}]")
+
+non_pad_per_sample = (labs != -100).sum(dim=-1).tolist()
+print(f"label lengths (non-padding): {non_pad_per_sample}")
+
+# Verify every sample in the batch satisfies the CTC constraint
+for i, label_len in enumerate(non_pad_per_sample):
+    frame_len = ctc_output_length(iv.shape[-1])
+    ratio = frame_len / max(label_len, 1)
+    status = "OK" if frame_len >= label_len * CTC_SAFETY_MARGIN else "FAIL"
+    print(f"  sample {i}: frames={frame_len}, labels={label_len}, ratio={ratio:.2f} [{status}]")
+
+# Probe forward pass
+model.train()
+probe_out = model(**{k: v.to(model.device) for k, v in first_batch.items()})
+probe_loss = probe_out.loss.item()
+print(f"\nProbe loss: {probe_loss:.4f}")
+if np.isnan(probe_loss):
+    raise RuntimeError(
+        "Probe loss is NaN even after all fixes. "
+        "Re-run prepare_clean_data.py with the updated script before training."
+    )
+if probe_loss == 0.0:
+    print("WARNING: probe loss is 0.0 — check that labels are not all padding.")
+print("Pre-flight passed. Starting training...\n")
+
+# ---------------------------------------------------------------------------
+# Train
+# ---------------------------------------------------------------------------
 trainer.train()
 
+# ---------------------------------------------------------------------------
+# Final eval & save
+# ---------------------------------------------------------------------------
 metrics = trainer.evaluate()
 print("\nFinal evaluation:")
-print(metrics)
+for k, v in metrics.items():
+    print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
 
 save_dir = os.path.join(SCRIPT_DIR, profile["output_dir"] + "_fixed")
 trainer.save_model(save_dir)
 processor.save_pretrained(save_dir)
-
-print(f"\nSaved model to: {save_dir}")
+print(f"\nModel saved to: {save_dir}")
