@@ -7,7 +7,7 @@ import soundfile as sf
 from dataclasses import dataclass
 from typing import Dict, List, Union
 from datasets import load_from_disk
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer, early_stopping_callback
 from jiwer import wer
 
 # --- 1. SETUP & CONFIG ---
@@ -193,7 +193,8 @@ trainer = Trainer(
     train_dataset=train_dataset,
     eval_dataset=valid_dataset.take(100),
     data_collator=data_collator,
-    compute_metrics=compute_metrics
+    compute_metrics=compute_metrics,
+    callback =early_stopping_callback.EarlyStoppingCallback(early_stopping_patience=5)
 )
 
 # 1. Confirm attention_mask is present
