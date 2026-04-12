@@ -7,8 +7,8 @@ import soundfile as sf
 from dataclasses import dataclass
 from typing import Dict, List, Union
 from datasets import load_from_disk
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
-from jiwer import cer
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer, EarlyStoppingCallback
+from jiwer import wer
 
 # --- 1. SETUP & CONFIG ---
 
@@ -153,12 +153,14 @@ def compute_metrics(pred):
     label_ids = pred.label_ids.copy()
     label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
 
-    pred_str = processor.batch_decode(pred_ids)
+    pred_str = processor.batch_decode(pred_ids, skip_special_tokens=True)
     label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
-    cer_scores = [cer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
-    avg_cer = float(np.mean(cer_scores))
-    return {"cer": avg_cer}
+    # Compute WER
+    # Note: wer() can take lists of strings directly
+    avg_wer = wer(label_str, pred_str)
+    
+    return {"wer": float(avg_wer)}
 
 # --- 5. MODEL WITH CTC STABILITY ---
 model = Wav2Vec2ForCTC.from_pretrained(
@@ -184,10 +186,9 @@ training_args = TrainingArguments(
     warmup_steps=config["training"]["warmup_steps"],
     eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
-    metric_for_best_model="cer",
+    metric_for_best_model="wer",
     greater_is_better=False,
     load_best_model_at_end=True,
-    early_stopping_patience=3,
     fp16=False,
     max_grad_norm=1.0,
     report_to="none"
@@ -199,7 +200,8 @@ trainer = Trainer(
     train_dataset=train_dataset,
     eval_dataset=valid_dataset.take(100),
     data_collator=data_collator,
-    compute_metrics=compute_metrics
+    compute_metrics=compute_metrics,
+    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
 )
 
 # 1. Confirm attention_mask is present
