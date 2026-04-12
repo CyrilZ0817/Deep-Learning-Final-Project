@@ -10,7 +10,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH  = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 TARGET_SR  = 16000
 OUTPUT_FILE = "audio_distribution_debug.png"
-LOG_INTERVAL = 100
+LOG_INTERVAL = 2000
 def log(msg):
     timestamp = datetime.now().strftime("%H:%M:%S")
     print(f"[{timestamp}] {msg}")
