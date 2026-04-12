@@ -146,6 +146,10 @@ def mix_on_the_fly(batch):
     ).input_values[0].astype(np.float32)
 
     labels = processor.tokenizer(text).input_ids
+    
+    if np.isnan(input_values).any() or np.isinf(input_values).any():
+        input_values = np.zeros_like(input_values)
+        batch["labels"] = []  # will be filtered by is_ctc_valid
 
     batch["input_values"] = input_values
     batch["labels"] = labels
@@ -168,7 +172,7 @@ def is_ctc_valid(example):
     out_len = ctc_output_length(audio_len)
 
     # make it really strict
-    return out_len >= label_len* 6 
+    return out_len >= label_len * 2
 
 
 train_dataset = train_dataset.map(mix_on_the_fly).filter(is_ctc_valid)
@@ -284,6 +288,18 @@ print("Probe loss:", probe_out.loss.item())
 if np.isnan(probe_out.loss.item()) or probe_out.loss.item() == 0.0:
     print("WARNING: probe loss is suspicious. Check filtering / text lengths / tokenizer.")
 
+print("--- Diagnosing first batch ---")
+first_batch = next(iter(trainer.get_train_dataloader()))
+
+# Check 1: input_values for NaN
+iv = first_batch["input_values"]
+print(f"input_values NaN: {torch.isnan(iv).any()}, Inf: {torch.isinf(iv).any()}")
+print(f"input_values range: [{iv.min():.3f}, {iv.max():.3f}]")
+
+# Check 2: labels
+labs = first_batch["labels"]
+print(f"labels (non-padding): {(labs != -100).sum()} tokens across batch")
+print(f"label lengths: {(labs != -100).sum(dim=-1).tolist()}")
 
 print("--- Starting Trainer ---")
 trainer.train()
