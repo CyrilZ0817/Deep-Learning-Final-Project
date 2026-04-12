@@ -15,7 +15,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
 
-ACTIVE_TYPE = "babble" 
+ACTIVE_TYPE = "complex" 
 profile = config["training"]["types"][ACTIVE_TYPE]
 
 SEED = config["training"]["seed"]
