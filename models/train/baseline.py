@@ -29,23 +29,6 @@ print(f"the keys of the dataset are {train_dataset.features.keys()}")
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
 
 
-def check_batch(batch):
-    audio_len = len(batch["input_values"])
-    label_len = len(batch["labels"])
-    output_frames = (audio_len - 400) // 320
-    batch["is_valid"] = int(output_frames >= label_len + 2)
-    return batch
-
-# Check on a sample
-sample = train_dataset.take(200)
-sample = sample.map(check_batch)
-valid_count = sum(s["is_valid"] for s in sample)
-print(f"Valid samples: {valid_count}/200")
-
-train_dataset = train_dataset.map(mix_on_the_fly).filter(
-    lambda x: x["input_values"] is not None
-)
-
 # --- 4. FAIL-SAFE DATA COLLATOR ---
 @dataclass
 class DataCollatorCTCWithPadding:
@@ -132,33 +115,6 @@ trainer = Trainer(
     data_collator=data_collator,
     compute_metrics=compute_metrics
 )
-
-# 1. Confirm attention_mask is present
-first_batch = next(iter(trainer.get_train_dataloader()))
-print("Batch keys:", first_batch.keys())
-print("Attention mask shape:", first_batch.get("attention_mask"))
-
-# 2. Check for NaN in raw audio
-for name, audio in LOADED_NOISES.items():
-    if np.isnan(audio).any():
-        print(f"NaN in noise file: {name}")
-
-# 3. Check a single mixed sample
-sample = next(iter(train_dataset))
-print("NaN in input_values:", np.isnan(sample["input_values"]).any())
-print("Input range:", np.min(sample["input_values"]), np.max(sample["input_values"]))
-
-
-# --- 7. FINAL BATCH INSPECTION ---
-print("--- DEBUG: Inspecting the first real batch for the model ---")
-dataloader = trainer.get_train_dataloader()
-first_batch = next(iter(dataloader))
-print(f"Batch Inputs Shape: {first_batch['input_values'].shape}")
-print(f"Batch Labels Shape: {first_batch['labels'].shape}")
-print(f"Non-masked labels in first sample: {(first_batch['labels'][0] != -100).sum()}")
-
-if (first_batch['labels'] != -100).sum() == 0:
-    print("!!! CRITICAL: THE ENTIRE BATCH IS MASKED. TRAINING WILL FAIL.")
 
 print("--- Starting Trainer ---")
 trainer.train()
