@@ -12,36 +12,23 @@ from jiwer import cer
 
 # --- 1. SETUP & CONFIG ---
 
-# ---------------------------------------------------------------------------
-# Config & seeds
-# ---------------------------------------------------------------------------
+# --- 1. SETUP & CONFIG ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r", encoding="utf-8") as f:
+with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
 
-ACTIVE_TYPE = "complex"
+ACTIVE_TYPE = "babble" 
 profile = config["training"]["types"][ACTIVE_TYPE]
 
 SEED = config["training"]["seed"]
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-
-# ---------------------------------------------------------------------------
-# Dataset
-# ---------------------------------------------------------------------------
-DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k/train")
-full_ds = load_from_disk(DATA_PATH)
-print(f"Loaded dataset: {len(full_ds)} samples.")
-
-split_ds = full_ds.train_test_split(test_size=0.1, seed=SEED)
-train_raw = split_ds["train"]
-valid_raw = split_ds["test"]
-print(f"Split — train: {len(train_raw)}, valid: {len(valid_raw)}")
-
+DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
+train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
 train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=SEED)
-valid_dataset = valid_raw.to_iterable_dataset()
+valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
+print(f"the keys of the dataset are {train_dataset.features.keys()}")
+
+
+processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
 
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
@@ -200,6 +187,7 @@ training_args = TrainingArguments(
     metric_for_best_model="cer",
     greater_is_better=False,
     load_best_model_at_end=True,
+    early_stopping_patience=3,
     fp16=False,
     max_grad_norm=1.0,
     report_to="none"
