@@ -11,13 +11,14 @@ from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, T
 from jiwer import cer
 
 # --- 1. SETUP & CONFIG ---
-SEED = config["training"]["seed"]
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
 
 ACTIVE_TYPE = "babble" 
 profile = config["training"]["types"][ACTIVE_TYPE]
+
+SEED = config["training"]["seed"]
 
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
