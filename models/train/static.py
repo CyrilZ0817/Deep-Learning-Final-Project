@@ -7,8 +7,8 @@ import soundfile as sf
 from dataclasses import dataclass
 from typing import Dict, List, Union
 from datasets import load_from_disk
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer, EarlyStoppingCallback
-from jiwer import cer
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
+from jiwer import wer
 
 # --- 1. SETUP & CONFIG ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,12 +18,13 @@ with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
 ACTIVE_TYPE = "static" 
 profile = config["training"]["types"][ACTIVE_TYPE]
 
+SEED = config["training"]["seed"]
+
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
-train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=42)
+train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=SEED)
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
 print(f"the keys of the dataset are {train_dataset.features.keys()}")
-
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
 
@@ -150,9 +151,9 @@ def compute_metrics(pred):
     pred_str = processor.batch_decode(pred_ids)
     label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
-    cer_scores = [cer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
-    avg_cer = float(np.mean(cer_scores))
-    return {"cer": avg_cer}
+    wer_scores = [wer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
+    avg_wer = float(np.mean(wer_scores))
+    return {"wer": avg_wer}
 
 # --- 5. MODEL WITH CTC STABILITY ---
 model = Wav2Vec2ForCTC.from_pretrained(
@@ -171,8 +172,6 @@ training_args = TrainingArguments(
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
-    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
-    gradient_accumulation_steps=config["training"].get("gradient_accumulation_steps", 1),
     
     logging_steps=50,
     eval_strategy="steps",
@@ -180,7 +179,7 @@ training_args = TrainingArguments(
     warmup_steps=config["training"]["warmup_steps"],
     eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
-    metric_for_best_model="cer",
+    metric_for_best_model="wer",
     greater_is_better=False,
     load_best_model_at_end=True,
     fp16=False,
