@@ -353,6 +353,72 @@ for i, label_len in enumerate(non_pad_per_sample):
     status = "OK" if frame_len >= label_len * CTC_SAFETY_MARGIN else "FAIL"
     print(f"  sample {i}: frames={frame_len}, labels={label_len}, ratio={ratio:.2f} [{status}]")
 
+# Run this right before trainer.train() and paste the output
+print("\n--- Deep probe ---")
+
+# 1. Decode the labels to see what transcripts look like
+labs_decoded = []
+for i in range(labs.shape[0]):
+    ids = labs[i][labs[i] != -100].tolist()
+    text = processor.tokenizer.decode(ids)
+    print(f"  sample {i} transcript ({len(ids)} tokens): '{text[:120]}'")
+
+# 2. Check logits for NaN/Inf
+model.eval()
+with torch.no_grad():
+    probe_batch_dev = {k: v.to(model.device) for k, v in first_batch.items()}
+    # Forward WITHOUT labels to check if logits themselves are clean
+    logits = model(
+        input_values=probe_batch_dev["input_values"],
+        attention_mask=probe_batch_dev["attention_mask"],
+    ).logits
+    print(f"\nLogits shape : {logits.shape}")
+    print(f"Logits NaN   : {torch.isnan(logits).any()}")
+    print(f"Logits Inf   : {torch.isinf(logits).any()}")
+    print(f"Logits range : [{logits.min():.3f}, {logits.max():.3f}]")
+    
+    # Log-softmax (what CTC actually receives)
+    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+    print(f"Log-probs NaN: {torch.isnan(log_probs).any()}")
+    print(f"Log-probs Inf: {torch.isinf(log_probs).any()}")
+    print(f"Log-probs min: {log_probs.min():.3f}  (very negative = collapsed logits)")
+
+# 3. Check CTC loss manually with exact lengths
+import torch.nn.functional as F
+log_probs_t = log_probs.transpose(0, 1)  # (T, N, C)
+input_lengths = probe_batch_dev["attention_mask"].sum(dim=-1)
+input_lengths_ctc = torch.tensor(
+    [ctc_output_length(l.item()) for l in input_lengths], dtype=torch.long
+)
+target_lengths = (probe_batch_dev["labels"] != -100).sum(dim=-1)
+targets = probe_batch_dev["labels"].clone()
+targets[targets == -100] = 0  # CTC doesn't accept -100
+
+print(f"\nCTC manual check:")
+print(f"  input_lengths_ctc : {input_lengths_ctc.tolist()}")
+print(f"  target_lengths    : {target_lengths.tolist()}")
+
+ctc_loss = F.ctc_loss(
+    log_probs_t,
+    targets,
+    input_lengths_ctc,
+    target_lengths,
+    blank=processor.tokenizer.pad_token_id,
+    reduction="none",
+    zero_infinity=False,
+)
+print(f"  per-sample CTC loss: {ctc_loss.tolist()}")
+ctc_loss_zi = F.ctc_loss(
+    log_probs_t,
+    targets,
+    input_lengths_ctc,
+    target_lengths,
+    blank=processor.tokenizer.pad_token_id,
+    reduction="none",
+    zero_infinity=True,
+)
+print(f"  per-sample CTC loss (zero_infinity=True): {ctc_loss_zi.tolist()}")
+
 # Probe forward pass
 model.train()
 probe_out = model(**{k: v.to(model.device) for k, v in first_batch.items()})
@@ -366,6 +432,8 @@ if np.isnan(probe_loss):
 if probe_loss == 0.0:
     print("WARNING: probe loss is 0.0 — check that labels are not all padding.")
 print("Pre-flight passed. Starting training...\n")
+
+
 
 # ---------------------------------------------------------------------------
 # Train
