@@ -31,7 +31,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
+DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k/train")
 full_ds = load_from_disk(DATA_PATH)
 print(f"Loaded combined dataset: {len(full_ds)} samples.")
 
