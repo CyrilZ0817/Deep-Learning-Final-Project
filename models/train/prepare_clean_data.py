@@ -48,7 +48,7 @@ def process_clean(batch):
         duration = len(audio) / TARGET_SR
 
         # 4. Filtering Logic
-        if np.max(np.abs(audio)) < 1e-6:
+        if np.max(np.abs(audio)) < 0.01:  # ~-40 dBFS floor
             return result
         
         if not (MIN_DUR <= duration <= MAX_DUR):
