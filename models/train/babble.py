@@ -201,7 +201,6 @@ trainer = Trainer(
     eval_dataset=valid_dataset.take(100),
     data_collator=data_collator,
     compute_metrics=compute_metrics,
-    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
 )
 
 # 1. Confirm attention_mask is present
