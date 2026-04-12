@@ -7,12 +7,11 @@ import soundfile as sf
 from dataclasses import dataclass
 from typing import Dict, List, Union
 from datasets import load_from_disk
-from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer, EarlyStoppingCallback
-from jiwer import wer
+from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
+from jiwer import cer
 
 # --- 1. SETUP & CONFIG ---
-
-# --- 1. SETUP & CONFIG ---
+SEED = config["training"]["seed"]
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
@@ -20,15 +19,11 @@ with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
 ACTIVE_TYPE = "babble" 
 profile = config["training"]["types"][ACTIVE_TYPE]
 
-SEED = config["training"]["seed"]
 DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
 train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=SEED)
 valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
 print(f"the keys of the dataset are {train_dataset.features.keys()}")
-
-
-processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
 
 
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
@@ -153,14 +148,12 @@ def compute_metrics(pred):
     label_ids = pred.label_ids.copy()
     label_ids[label_ids == -100] = processor.tokenizer.pad_token_id
 
-    pred_str = processor.batch_decode(pred_ids, skip_special_tokens=True)
+    pred_str = processor.batch_decode(pred_ids)
     label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
-    # Compute WER
-    # Note: wer() can take lists of strings directly
-    avg_wer = wer(label_str, pred_str)
-    
-    return {"wer": float(avg_wer)}
+    cer_scores = [cer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
+    avg_cer = float(np.mean(cer_scores))
+    return {"cer": avg_cer}
 
 # --- 5. MODEL WITH CTC STABILITY ---
 model = Wav2Vec2ForCTC.from_pretrained(
@@ -186,7 +179,7 @@ training_args = TrainingArguments(
     warmup_steps=config["training"]["warmup_steps"],
     eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
-    metric_for_best_model="wer",
+    metric_for_best_model="cer",
     greater_is_better=False,
     load_best_model_at_end=True,
     fp16=False,
@@ -200,7 +193,7 @@ trainer = Trainer(
     train_dataset=train_dataset,
     eval_dataset=valid_dataset.take(100),
     data_collator=data_collator,
-    compute_metrics=compute_metrics,
+    compute_metrics=compute_metrics
 )
 
 # 1. Confirm attention_mask is present
