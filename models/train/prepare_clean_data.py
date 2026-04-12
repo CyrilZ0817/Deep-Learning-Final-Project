@@ -13,8 +13,8 @@ OUT_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
 
 TARGET_SR = 16000
 NUM_PROC = 4
-MIN_DUR = 3.0
-MAX_DUR = 16.0
+MIN_DUR = 4.0
+MAX_DUR = 15.0
 
 def process_clean(batch):
     result = {
