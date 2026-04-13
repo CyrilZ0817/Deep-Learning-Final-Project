@@ -104,7 +104,7 @@ model.freeze_feature_encoder()
 
 # --- 6. TRAINING ARGUMENTS ---
 training_args = TrainingArguments(
-    output_dir=os.path.join(SCRIPT_DIR, "output/baseline"),
+    output_dir=os.path.join(SCRIPT_DIR, config["training"]["types"][ACTIVE_TYPE]["output_dir"]),
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
@@ -118,6 +118,7 @@ training_args = TrainingArguments(
     load_best_model_at_end=True,
     fp16=torch.cuda.is_available(), # Use FP16 if GPU is available for speed
     report_to="none",
+    save_total_limit=3, # Keep only the 3 best checkpoints
 )
 
 trainer = Trainer(
