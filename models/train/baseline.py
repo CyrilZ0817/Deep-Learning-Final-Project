@@ -30,12 +30,13 @@ def prepare_baseline_batch(batch):
     audio = batch["clean_audio"]
     text = str(batch["clean_text"]).upper().strip()
 
-    # Process audio
+    # 1. Process audio (input_values)
     batch["input_values"] = processor(audio, sampling_rate=16000).input_values[0]
     
-    # Process labels
-    with processor.as_target_processor():
-        batch["labels"] = processor(text).input_ids
+    # 2. Process labels (input_ids)
+    # We call the processor directly on the text. 
+    # It automatically routes to the tokenizer.
+    batch["labels"] = processor(text=text).input_ids
         
     return batch
 
