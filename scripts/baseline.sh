@@ -2,8 +2,8 @@
 
 # --- SLURM Resource Request ---
 #SBATCH --job-name=baseline_train
-#SBATCH --output=logs/baseline_train.out
-#SBATCH --error=logs/baseline_train.err
+#SBATCH --output=logs/baseline/train.out
+#SBATCH --error=logs/baseline/train.err
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
