@@ -91,8 +91,11 @@ def compute_metrics(pred):
     return {"wer": wer_score}
 
 # --- 5. MODEL ---
+# load the saved checkpoint for the baseline model
+checkpoint_path = os.path.join(SCRIPT_DIR, "output/baseline/checkpoint-8250") 
+
 model = Wav2Vec2ForCTC.from_pretrained(
-    config["model"]["name"], 
+    checkpoint_path, 
     ctc_loss_reduction=config["model"]["ctc_loss_reduction"],
     pad_token_id=processor.tokenizer.pad_token_id,
     ctc_zero_infinity=True
