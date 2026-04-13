@@ -184,7 +184,8 @@ training_args = TrainingArguments(
     load_best_model_at_end=True,
     fp16=False,
     max_grad_norm=1.0,
-    report_to="none"
+    report_to="none",
+    save_total_limit=3,
 )
 
 trainer = Trainer(
