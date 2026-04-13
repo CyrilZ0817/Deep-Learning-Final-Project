@@ -17,21 +17,24 @@ training:
     static:
       subfolder: "noises/static"
       snr_range:
-        min: 0
-        max: 15
+        min: 10
+        max: 30
       output_dir: "results/static"
+      prev_model_dir: "results_old/static/checkpoint-20000"
     complex:
       subfolder: "noises/complex"
       snr_range:
-        min: 0
-        max: 15
+        min: 10
+        max: 30
       output_dir: "results/complex"
+      prev_model_dir: "results_old/complex/checkpoint-20000"
     babble:
       subfolder: "noises/babble"
       snr_range:
         min: 10
-        max: 25
+        max: 30
       output_dir: "results/babble"
+      prev_model_dir: "results_old/babble/checkpoint-19750"
     all:
       output_dir: "results/all"
   
