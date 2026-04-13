@@ -155,9 +155,11 @@ def compute_metrics(pred):
     avg_wer = float(np.mean(wer_scores))
     return {"wer": avg_wer}
 
+checkpoint_path = os.path.join(SCRIPT_DIR, profile["prev_model_dir"]) 
+
 # --- 5. MODEL WITH CTC STABILITY ---
 model = Wav2Vec2ForCTC.from_pretrained(
-    config["model"]["name"], 
+    checkpoint_path, 
     ctc_loss_reduction=config["model"]["ctc_loss_reduction"],
     pad_token_id=processor.tokenizer.pad_token_id,
     # --- FIX: ZERO INFINITY ---
