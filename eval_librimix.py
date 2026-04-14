@@ -7,7 +7,7 @@ from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 from jiwer import wer, cer
 
 # --- Configuration ---
-BASE_DIR = "models/train/results_old"
+BASE_DIR = "results"
 # Path to your MiniLibriMix metadata
 METADATA_CSV = "test/MiniLibriMix/metadata/mixture_train_mix_both.csv"
 # Path to original LibriSpeech (needed to find transcripts)
@@ -42,13 +42,16 @@ def evaluate_models():
     
     # 1. Identify checkpoints
     checkpoint_paths = []
-    for root, dirs, files in os.walk(BASE_DIR):
-        if "checkpoint-" in root or "config.json" in files:
-            if "wav2vec2" in root.lower():
-                checkpoint_paths.append(root)
+    for item in os.listdir(BASE_DIR):
+        full_path = os.path.join(BASE_DIR, item)
+        
+        # Check if it's a directory and matches your naming
+        if os.path.isdir(full_path):
+            if "checkpoint" in item.lower() or "wav2vec2" in item.lower():
+                checkpoint_paths.append(full_path)
 
     if not checkpoint_paths:
-        print("No wav2vec2 checkpoints found.")
+        print(f"No checkpoint folders found directly in {BASE_DIR}")
         return
 
     # 2. Loop through checkpoints
