@@ -40,8 +40,12 @@ def evaluate_with_whisper():
         path = os.path.join(WAV_DIR, filename)
         speech, _ = librosa.load(path, sr=16000)
         
+        # Inside the Whisper loop
         input_features = whisper_processor(speech, sampling_rate=16000, return_tensors="pt").input_features.to(DEVICE)
-        
+
+        # ADD THIS LINE to match precision
+        input_features = input_features.to(whisper_model.dtype) 
+
         with torch.no_grad():
             predicted_ids = whisper_model.generate(input_features)
         
