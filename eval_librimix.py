@@ -55,9 +55,11 @@ def evaluate_models():
         return
 
     # 2. Loop through checkpoints
+    # 2. Loop through checkpoints
     for ckpt in checkpoint_paths:
         print(f"\nEvaluating: {ckpt}")
         try:
+            # Use only the processor
             processor = Wav2Vec2Processor.from_pretrained(ckpt)
             model = Wav2Vec2ForCTC.from_pretrained(ckpt).to(DEVICE)
             
@@ -65,20 +67,20 @@ def evaluate_models():
             references = []
 
             for _, row in tqdm(df_test.iterrows(), total=len(df_test), desc="Testing"):
-                # Construct absolute path to the mixture
-                # 'test/' is the prefix based on your directory description
                 audio_path = os.path.join("test", row['mixture_path'])
-                
-                # Fetch ground truth transcript
                 target_text = get_transcript_from_id(row['mixture_ID'])
                 
                 if target_text:
+                    # Load and normalize
                     speech, _ = librosa.load(audio_path, sr=16000)
+                    
+                    # The processor handles the feature extraction internally
                     inputs = processor(speech, sampling_rate=16000, return_tensors="pt", padding=True)
                     
                     with torch.no_grad():
                         logits = model(inputs.input_values.to(DEVICE)).logits
                     
+                    # Decode to text
                     pred_ids = torch.argmax(logits, dim=-1)
                     transcription = processor.batch_decode(pred_ids)[0]
                     
