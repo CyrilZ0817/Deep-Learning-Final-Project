@@ -14,6 +14,7 @@ METADATA_CSV = "test/MiniLibriMix/metadata/mixture_train_mix_both.csv"
 LIBRISPEECH_SRC = "path/to/original/LibriSpeech/train-clean-100" 
 OUTPUT_FILE = "evaluation_results.txt"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+BASE_MODEL_NAME = "facebook/wav2vec2-base-960h"
 
 def get_transcript_from_id(mixture_id):
     """
@@ -60,7 +61,7 @@ def evaluate_models():
         print(f"\nEvaluating: {ckpt}")
         try:
             # Use only the processor
-            processor = Wav2Vec2Processor.from_pretrained(ckpt)
+            processor = Wav2Vec2Processor.from_pretrained(BASE_MODEL_NAME)
             model = Wav2Vec2ForCTC.from_pretrained(ckpt).to(DEVICE)
             
             predictions = []
