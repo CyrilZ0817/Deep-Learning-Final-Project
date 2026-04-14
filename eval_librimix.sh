@@ -31,6 +31,6 @@ echo "Starting training at: $(date)"
 mkdir -p "logs/static"
 
 # Run with -u to get real-time log updates in your .out file
-python3 "${PROJECT_ROOT}/eval_librimixs.py"
+python3 "${PROJECT_ROOT}/eval_librimix.py"
 
 echo "Job finished at: $(date)"
