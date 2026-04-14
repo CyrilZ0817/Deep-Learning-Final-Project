@@ -33,26 +33,38 @@ def evaluate_with_whisper():
         print(f"No wav files found in {WAV_DIR}")
         return
 
-    # 4. Generate Whisper "Ground Truth" Transcripts first (to save time)
+    
+   # 4. Generate Whisper "Ground Truth" Transcripts
     print(f"Generating ground truth for {len(wav_files)} files...")
-    ground_truth_map = {}
+    ground_truth_data = [] # Changed to a list of dicts for easy CSV conversion
+    
     for filename in tqdm(wav_files, desc="Whisper Transcribing"):
         path = os.path.join(WAV_DIR, filename)
         speech, _ = librosa.load(path, sr=16000)
         
-        # Inside the Whisper loop
         input_features = whisper_processor(speech, sampling_rate=16000, return_tensors="pt").input_features.to(DEVICE)
-
-        # ADD THIS LINE to match precision
-        input_features = input_features.to(whisper_model.dtype) 
-
+        input_features = input_features.to(whisper_model.dtype) # Fix precision mismatch
+        
         with torch.no_grad():
             predicted_ids = whisper_model.generate(input_features)
         
         transcript = whisper_processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-        ground_truth_map[filename] = transcript.upper().strip()
+        ground_truth_data.append({
+            "filename": filename,
+            "whisper_transcript": transcript.upper().strip()
+        })
 
-    # Clear Whisper from GPU memory to make room for Wav2Vec2
+    # --- NEW: Save Ground Truth to CSV ---
+    gt_df = pd.DataFrame(ground_truth_data)
+    gt_csv_path = "whisper_ground_truth_labels.csv"
+    gt_df.to_csv(gt_csv_path, index=False)
+    print(f"Ground truth saved to {gt_csv_path}")
+    
+    # Create the map for the Wav2Vec2 loop
+    ground_truth_map = dict(zip(gt_df.filename, gt_df.whisper_transcript))
+    # ------------------------------------
+
+    # Clear Whisper from GPU memory
     del whisper_model
     torch.cuda.empty_cache()
 
