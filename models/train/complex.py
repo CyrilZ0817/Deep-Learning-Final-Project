@@ -178,9 +178,8 @@ def compute_metrics(pred):
     return {"wer": avg_wer}
 
 # Use base model 
-checkpoint_path = os.path.join() 
 model = Wav2Vec2ForCTC.from_pretrained(
-    checkpoint_path, 
+    config["model"]["name"], 
     ctc_loss_reduction=config["model"]["ctc_loss_reduction"],
     pad_token_id=processor.tokenizer.pad_token_id,
     ctc_zero_infinity=True
