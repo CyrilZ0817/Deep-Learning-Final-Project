@@ -197,7 +197,6 @@ model.freeze_feature_encoder()
 # Start training
 training_args = TrainingArguments(
     output_dir=os.path.join(SCRIPT_DIR, profile["output_dir"]),
-    group_by_length=True,
     length_column_name="input_length",
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     max_steps=config["training"]["max_steps"],
