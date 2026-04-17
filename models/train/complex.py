@@ -185,7 +185,7 @@ model = Wav2Vec2ForCTC.from_pretrained(
     ctc_zero_infinity=True
 )
 # no need to further fine tune
-model.freeze_feature_extractor()
+model.freeze_feature_encoder()
 
 # Start training
 training_args = TrainingArguments(
