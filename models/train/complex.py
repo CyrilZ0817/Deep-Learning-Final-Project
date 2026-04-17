@@ -9,6 +9,8 @@ from typing import Dict, List, Union
 from datasets import load_from_disk
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
 from jiwer import wer
+import glob
+from torch.utils.data import Dataset
 
 # Set up connection to config
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -22,15 +24,47 @@ profile = config["training"]["types"][ACTIVE_TYPE]
 SEED = config["training"]["seed"]
 
 # Get datasets
-DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
-train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
-# Get length
-train_dataset = train_raw.to_iterable_dataset()
-train_dataset = train_dataset.map(lambda x: {"input_length": len(x["input_values"])})
-# Shuffle 
-train_dataset = train_dataset.shuffle(buffer_size=1000, seed=SEED)
-valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
-print(f"the keys of the dataset are {train_dataset.features.keys()}")
+FLAC_ROOT = os.path.join(SCRIPT_DIR, "data/LibriSpeech/train-clean-100") 
+
+def build_flac_index(root):
+    """Return list of (flac_path, transcript_text) pairs."""
+    samples = []
+    for trans_file in glob.glob(os.path.join(root, "**/*.trans.txt"), recursive=True):
+        folder = os.path.dirname(trans_file)
+        with open(trans_file, "r") as f:
+            for line in f:
+                parts = line.strip().split(" ", 1)
+                if len(parts) == 2:
+                    utt_id, text = parts
+                    flac_path = os.path.join(folder, utt_id + ".flac")
+                    if os.path.exists(flac_path):
+                        samples.append({"flac_path": flac_path, "clean_text": text})
+    return samples
+
+class LibriSpeechFLACDataset(Dataset):
+    def __init__(self, samples):
+        self.samples = samples
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        item = self.samples[idx]
+        audio, _ = sf.read(item["flac_path"])          # sf already handles FLAC
+        return {
+            "clean_audio": audio.astype("float32"),
+            "clean_text":  item["clean_text"],
+            "input_length": len(audio),
+        }
+
+all_samples = build_flac_index(FLAC_ROOT)
+random.seed(SEED)
+random.shuffle(all_samples)
+
+split = int(0.95 * len(all_samples))
+train_dataset = LibriSpeechFLACDataset(all_samples[:split])
+valid_dataset = LibriSpeechFLACDataset(all_samples[split:])
+print(f"Train: {len(train_dataset)}, Valid: {len(valid_dataset)}")
 
 # Use the same processor as Wav2Vec2 
 # Since we are using the same vocabulary and the audio files are all 16 kHz, this should be compatible.
