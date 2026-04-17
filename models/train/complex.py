@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Union
 from datasets import load_from_disk
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
+from torch.utils.data import Dataset as TorchDataset
 from jiwer import wer
 import glob
 from torch.utils.data import Dataset
@@ -115,8 +116,17 @@ def mix_on_the_fly(batch):
     batch["labels"] = processor.tokenizer(text).input_ids    
     return batch
 
-train_dataset = train_dataset.map(mix_on_the_fly)
-valid_dataset = valid_dataset.map(mix_on_the_fly)
+class NoisyDataset(TorchDataset):
+    def __init__(self, base_dataset):
+        self.base = base_dataset
+    def __len__(self):
+        return len(self.base)
+    def __getitem__(self, idx):
+        return mix_on_the_fly(self.base[idx])   # reuses your existing function unchanged
+
+train_dataset = NoisyDataset(train_dataset)
+valid_dataset = NoisyDataset(valid_dataset)
+
 
 
 # Data collator with padding
@@ -205,7 +215,7 @@ trainer = Trainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
-    eval_dataset=valid_dataset.take(100),
+    eval_dataset=valid_dataset,
     data_collator=data_collator,
     compute_metrics=compute_metrics
 )
