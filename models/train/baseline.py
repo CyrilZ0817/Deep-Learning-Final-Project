@@ -1,50 +1,85 @@
 import os
+import random
 import numpy as np
 import torch
 import yaml
+import soundfile as sf
 from dataclasses import dataclass
 from typing import Dict, List, Union
 from datasets import load_from_disk
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
+from torch.utils.data import Dataset as TorchDataset
 from jiwer import wer
+import glob
+from torch.utils.data import Dataset
+from transformers.trainer_pt_utils import LengthGroupedSampler
+from torch.utils.data import DataLoader
 
-# --- 1. SETUP & CONFIG ---
+# Set up connection to config
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
 
-# Using a generic baseline profile or default from config
+# Get type
 ACTIVE_TYPE = "baseline" 
+profile = config["training"]["types"][ACTIVE_TYPE]
+
 SEED = config["training"]["seed"]
 
-DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
-train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
-train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=SEED)
-valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
+# Get datasets
+FLAC_ROOT = os.path.join(SCRIPT_DIR, "data/LibriSpeech/train-clean-100") 
 
+def build_flac_index(root):
+    """Return list of (flac_path, transcript_text) pairs."""
+    samples = []
+    for trans_file in glob.glob(os.path.join(root, "**/*.trans.txt"), recursive=True):
+        folder = os.path.dirname(trans_file)
+        with open(trans_file, "r") as f:
+            for line in f:
+                parts = line.strip().split(" ", 1)
+                if len(parts) == 2:
+                    utt_id, text = parts
+                    flac_path = os.path.join(folder, utt_id + ".flac")
+                    if os.path.exists(flac_path):
+                        samples.append({"flac_path": flac_path, "clean_text": text})
+    return samples
+
+class LibriSpeechFLACDataset(Dataset):
+    def __init__(self, samples):
+        self.samples = samples
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        item = self.samples[idx]
+        audio, _ = sf.read(item["flac_path"])          # sf already handles FLAC
+        return {
+            "clean_audio": audio.astype("float32"),
+            "clean_text":  item["clean_text"],
+            "input_length": len(audio),
+        }
+
+all_samples = build_flac_index(FLAC_ROOT)
+random.seed(SEED)
+random.shuffle(all_samples)
+
+split = int(0.95 * len(all_samples))
+train_dataset = LibriSpeechFLACDataset(all_samples[:split])
+valid_dataset = LibriSpeechFLACDataset(all_samples[split:])
+print(f"Train: {len(train_dataset)}, Valid: {len(valid_dataset)}")
+
+# Use the same processor as Wav2Vec2 
+# Since we are using the same vocabulary and the audio files are all 16 kHz, this should be compatible.
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
 
-# --- 2. BASELINE DATA PREPARATION (NO AUGMENTATION) ---
-def prepare_baseline_batch(batch):
-    # Use the clean audio directly
-    audio = batch["clean_audio"]
-    text = str(batch["clean_text"]).upper().strip()
+batch_size = config["training"]["per_device_train_batch_size"]
 
-    # 1. Process audio (input_values)
-    batch["input_values"] = processor(audio, sampling_rate=16000).input_values[0]
-    
-    # 2. Process labels (input_ids)
-    # We call the processor directly on the text. 
-    # It automatically routes to the tokenizer.
-    batch["labels"] = processor(text=text).input_ids
-        
-    return batch
 
-# Apply mapping without noise injection
-train_dataset = train_dataset.map(prepare_baseline_batch)
-valid_dataset = valid_dataset.map(prepare_baseline_batch)
 
-# --- 3. DATA COLLATOR ---
+# Data collator with padding
+# Pud input to the longest sample
+# Pud text to the longest label
 @dataclass
 class DataCollatorCTCWithPadding:
     processor: Wav2Vec2Processor
@@ -66,17 +101,16 @@ class DataCollatorCTCWithPadding:
             return_tensors="pt",
         )
 
-        # Replace padding with -100 to ignore loss correctly
         labels = labels_batch["input_ids"].masked_fill(
             labels_batch["attention_mask"].ne(1), -100
         )
 
         batch["labels"] = labels
         return batch
-
 data_collator = DataCollatorCTCWithPadding(processor=processor)
 
-# --- 4. METRICS ---
+# Metrics
+# Use WER as the main metric for evaluation
 def compute_metrics(pred):
     pred_logits = pred.predictions
     pred_ids = np.argmax(pred_logits, axis=-1)
@@ -87,48 +121,65 @@ def compute_metrics(pred):
     pred_str = processor.batch_decode(pred_ids)
     label_str = processor.tokenizer.batch_decode(label_ids, skip_special_tokens=True)
 
-    wer_score = wer(label_str, pred_str)
-    return {"wer": wer_score}
+    wer_scores = [wer(ref, hyp) for ref, hyp in zip(label_str, pred_str)]
+    avg_wer = float(np.mean(wer_scores))
+    return {"wer": avg_wer}
 
-# --- 5. MODEL ---
-# load the saved checkpoint for the baseline model
-checkpoint_path = os.path.join(SCRIPT_DIR, "output/baseline/checkpoint-8250") 
-
+# Use base model 
 model = Wav2Vec2ForCTC.from_pretrained(
-    checkpoint_path, 
+    config["model"]["name"], 
     ctc_loss_reduction=config["model"]["ctc_loss_reduction"],
     pad_token_id=processor.tokenizer.pad_token_id,
     ctc_zero_infinity=True
 )
+# no need to further fine tune
 model.freeze_feature_encoder()
 
-# --- 6. TRAINING ARGUMENTS ---
+# Start training
 training_args = TrainingArguments(
-    output_dir=os.path.join(SCRIPT_DIR, config["training"]["types"][ACTIVE_TYPE]["output_dir"]),
+    output_dir=os.path.join(SCRIPT_DIR, profile["output_dir"]),
+    length_column_name="input_length",
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
+    
     logging_steps=50,
     eval_strategy="steps",
+    logging_strategy="steps",
     warmup_steps=config["training"]["warmup_steps"],
     eval_steps=config["training"]["eval_steps"],
     save_steps=config["training"]["save_steps"],
     metric_for_best_model="wer",
     greater_is_better=False,
     load_best_model_at_end=True,
-    fp16=torch.cuda.is_available(), # Use FP16 if GPU is available for speed
-    report_to="none",
-    save_total_limit=3, # Keep only the 3 best checkpoints
+    fp16=True,
+    weight_decay=config["training"]["weight_decay"],
+    save_total_limit= config["training"]["save_total_limit"],
 )
 
-trainer = Trainer(
+class LengthGroupedTrainer(Trainer):
+    def get_train_dataloader(self):
+        train_sampler = LengthGroupedSampler(
+            batch_size=batch_size,
+            lengths=self.train_dataset.lengths,
+            dataset=self.train_dataset,
+        )
+        return DataLoader(
+            self.train_dataset,
+            collate_fn=data_collator,
+            sampler=train_sampler,
+            batch_size=batch_size,
+        )
+
+trainer = LengthGroupedTrainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
-    eval_dataset=valid_dataset.take(100),
+    eval_dataset=valid_dataset,
     data_collator=data_collator,
-    compute_metrics=compute_metrics
+    compute_metrics=compute_metrics,
 )
 
-print("--- Starting Baseline Training ---")
+
+print("--- Starting Trainer ---")
 trainer.train()
