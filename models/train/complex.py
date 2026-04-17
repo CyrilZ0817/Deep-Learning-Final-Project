@@ -12,6 +12,8 @@ from torch.utils.data import Dataset as TorchDataset
 from jiwer import wer
 import glob
 from torch.utils.data import Dataset
+from transformers.trainer_pt_utils import LengthGroupedSampler
+from torch.utils.data import DataLoader
 
 # Set up connection to config
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -119,13 +121,18 @@ def mix_on_the_fly(batch):
 class NoisyDataset(TorchDataset):
     def __init__(self, base_dataset):
         self.base = base_dataset
+        self.lengths = [
+            sf.info(s["flac_path"]).frames for s in base_dataset.samples
+        ]
     def __len__(self):
         return len(self.base)
     def __getitem__(self, idx):
-        return mix_on_the_fly(self.base[idx])   # reuses your existing function unchanged
+        return mix_on_the_fly(self.base[idx])
 
 train_dataset = NoisyDataset(train_dataset)
 valid_dataset = NoisyDataset(valid_dataset)
+
+batch_size = config["training"]["per_device_train_batch_size"]
 
 
 
@@ -210,14 +217,29 @@ training_args = TrainingArguments(
     save_total_limit= config["training"]["save_total_limit"],
 )
 
-trainer = Trainer(
+class LengthGroupedTrainer(Trainer):
+    def get_train_dataloader(self):
+        train_sampler = LengthGroupedSampler(
+            batch_size=batch_size,
+            lengths=self.train_dataset.lengths,
+            dataset=self.train_dataset,
+        )
+        return DataLoader(
+            self.train_dataset,
+            collate_fn=data_collator,
+            sampler=train_sampler,
+            batch_size=batch_size,
+        )
+
+trainer = LengthGroupedTrainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
     eval_dataset=valid_dataset,
     data_collator=data_collator,
-    compute_metrics=compute_metrics
+    compute_metrics=compute_metrics,
 )
+
 
 print("--- Starting Trainer ---")
 trainer.train()
