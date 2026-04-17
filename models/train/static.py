@@ -8,27 +8,72 @@ from dataclasses import dataclass
 from typing import Dict, List, Union
 from datasets import load_from_disk
 from transformers import Wav2Vec2Processor, Wav2Vec2ForCTC, TrainingArguments, Trainer
+from torch.utils.data import Dataset as TorchDataset
 from jiwer import wer
+import glob
+from torch.utils.data import Dataset
+from transformers.trainer_pt_utils import LengthGroupedSampler
+from torch.utils.data import DataLoader
 
-# --- 1. SETUP & CONFIG ---
+# Set up connection to config
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(SCRIPT_DIR, "config.yaml"), "r") as f:
     config = yaml.safe_load(f)
 
+# Get type
 ACTIVE_TYPE = "static" 
 profile = config["training"]["types"][ACTIVE_TYPE]
 
 SEED = config["training"]["seed"]
 
-DATA_PATH = os.path.join(SCRIPT_DIR, "data/librispeech_clean_16k")
-train_raw = load_from_disk(os.path.join(DATA_PATH, "train"))
-train_dataset = train_raw.to_iterable_dataset().shuffle(buffer_size=500, seed=SEED)
-valid_dataset = load_from_disk(os.path.join(DATA_PATH, "valid")).to_iterable_dataset()
-print(f"the keys of the dataset are {train_dataset.features.keys()}")
+# Get datasets
+FLAC_ROOT = os.path.join(SCRIPT_DIR, "data/LibriSpeech/train-clean-100") 
 
+def build_flac_index(root):
+    """Return list of (flac_path, transcript_text) pairs."""
+    samples = []
+    for trans_file in glob.glob(os.path.join(root, "**/*.trans.txt"), recursive=True):
+        folder = os.path.dirname(trans_file)
+        with open(trans_file, "r") as f:
+            for line in f:
+                parts = line.strip().split(" ", 1)
+                if len(parts) == 2:
+                    utt_id, text = parts
+                    flac_path = os.path.join(folder, utt_id + ".flac")
+                    if os.path.exists(flac_path):
+                        samples.append({"flac_path": flac_path, "clean_text": text})
+    return samples
+
+class LibriSpeechFLACDataset(Dataset):
+    def __init__(self, samples):
+        self.samples = samples
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        item = self.samples[idx]
+        audio, _ = sf.read(item["flac_path"])          # sf already handles FLAC
+        return {
+            "clean_audio": audio.astype("float32"),
+            "clean_text":  item["clean_text"],
+            "input_length": len(audio),
+        }
+
+all_samples = build_flac_index(FLAC_ROOT)
+random.seed(SEED)
+random.shuffle(all_samples)
+
+split = int(0.95 * len(all_samples))
+train_dataset = LibriSpeechFLACDataset(all_samples[:split])
+valid_dataset = LibriSpeechFLACDataset(all_samples[split:])
+print(f"Train: {len(train_dataset)}, Valid: {len(valid_dataset)}")
+
+# Use the same processor as Wav2Vec2 
+# Since we are using the same vocabulary and the audio files are all 16 kHz, this should be compatible.
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
 
-# --- 2. NOISE LOADING ---
+# Load associated noises
 def load_noises():
     loaded = {}
     noise_dir = os.path.join(SCRIPT_DIR, profile["subfolder"])
@@ -37,12 +82,10 @@ def load_noises():
         audio, _ = sf.read(os.path.join(noise_dir, f))
         loaded[f] = audio.astype("float32")
     return loaded
-
 LOADED_NOISES = load_noises()
 NOISE_NAMES = list(LOADED_NOISES.keys())
 
-# --- 3. MIXING WITH NUMERICAL SANITIZATION ---
-# noise utils
+# Add noise at same sampling rate
 def rms(x):
     return np.sqrt(np.mean(x ** 2) + 1e-8)
 
@@ -68,48 +111,34 @@ def mix_on_the_fly(batch):
     mixed = mixed / (np.abs(mixed).max() + 1e-8)   # normalize to [-1, 1]
     assert not np.isnan(mixed).any(), "NaN survived sanitization!"
     
-
     batch["input_values"] = np.array(
         processor(mixed, sampling_rate=16000, return_tensors="np").input_values[0],
         dtype=np.float32
     )
-    batch["labels"] = processor.tokenizer(text).input_ids
-    
-    # DEBUG PRINTS
-    audio_len = len(batch["input_values"])
-    label_len = len(batch["labels"])
-    frames = audio_len // 320
-    
-    if frames <= label_len:
-        print(f"!!! CRITICAL: Audio too short! Frames: {frames}, Labels: {label_len}")
-        print(f"Text: {batch['clean_text']}")
-        
-    if np.abs(mixed).max() < 1e-5:
-        print("!!! CRITICAL: Audio is silent!")
-        
+    batch["labels"] = processor.tokenizer(text).input_ids    
     return batch
 
-train_dataset = train_dataset.map(mix_on_the_fly)
-valid_dataset = valid_dataset.map(mix_on_the_fly)
+class NoisyDataset(TorchDataset):
+    def __init__(self, base_dataset):
+        self.base = base_dataset
+        self.lengths = [
+            sf.info(s["flac_path"]).frames for s in base_dataset.samples
+        ]
+    def __len__(self):
+        return len(self.base)
+    def __getitem__(self, idx):
+        return mix_on_the_fly(self.base[idx])
 
-def check_batch(batch):
-    audio_len = len(batch["input_values"])
-    label_len = len(batch["labels"])
-    output_frames = (audio_len - 400) // 320
-    batch["is_valid"] = int(output_frames >= label_len + 2)
-    return batch
+train_dataset = NoisyDataset(train_dataset)
+valid_dataset = NoisyDataset(valid_dataset)
 
-# Check on a sample
-sample = train_dataset.take(200)
-sample = sample.map(check_batch)
-valid_count = sum(s["is_valid"] for s in sample)
-print(f"Valid samples: {valid_count}/200")
+batch_size = config["training"]["per_device_train_batch_size"]
 
-train_dataset = train_dataset.map(mix_on_the_fly).filter(
-    lambda x: x["input_values"] is not None
-)
 
-# --- 4. FAIL-SAFE DATA COLLATOR ---
+
+# Data collator with padding
+# Pud input to the longest sample
+# Pud text to the longest label
 @dataclass
 class DataCollatorCTCWithPadding:
     processor: Wav2Vec2Processor
@@ -137,10 +166,10 @@ class DataCollatorCTCWithPadding:
 
         batch["labels"] = labels
         return batch
-
 data_collator = DataCollatorCTCWithPadding(processor=processor)
 
-# 9. metrics
+# Metrics
+# Use WER as the main metric for evaluation
 def compute_metrics(pred):
     pred_logits = pred.predictions
     pred_ids = np.argmax(pred_logits, axis=-1)
@@ -155,21 +184,20 @@ def compute_metrics(pred):
     avg_wer = float(np.mean(wer_scores))
     return {"wer": avg_wer}
 
-checkpoint_path = os.path.join(SCRIPT_DIR, profile["prev_model_dir"]) 
-
-# --- 5. MODEL WITH CTC STABILITY ---
+# Use base model 
 model = Wav2Vec2ForCTC.from_pretrained(
-    checkpoint_path, 
+    config["model"]["name"], 
     ctc_loss_reduction=config["model"]["ctc_loss_reduction"],
     pad_token_id=processor.tokenizer.pad_token_id,
-    # --- FIX: ZERO INFINITY ---
-    # This prevents 'nan' loss if the alignment is mathematically impossible
     ctc_zero_infinity=True
 )
+# no need to further fine tune
 model.freeze_feature_encoder()
-# --- 6. TRAINING ARGUMENTS ---
+
+# Start training
 training_args = TrainingArguments(
     output_dir=os.path.join(SCRIPT_DIR, profile["output_dir"]),
+    length_column_name="input_length",
     per_device_train_batch_size=config["training"]["per_device_train_batch_size"],
     max_steps=config["training"]["max_steps"],
     learning_rate=float(config["training"]["learning_rate"]),
@@ -183,47 +211,34 @@ training_args = TrainingArguments(
     metric_for_best_model="wer",
     greater_is_better=False,
     load_best_model_at_end=True,
-    fp16=False,
-    max_grad_norm=1.0,
-    report_to="none",
-    save_total_limit=3,
+    fp16=True,
+    weight_decay=config["training"]["weight_decay"],
+    save_total_limit= config["training"]["save_total_limit"],
 )
 
-trainer = Trainer(
+class LengthGroupedTrainer(Trainer):
+    def get_train_dataloader(self):
+        train_sampler = LengthGroupedSampler(
+            batch_size=batch_size,
+            lengths=self.train_dataset.lengths,
+            dataset=self.train_dataset,
+        )
+        return DataLoader(
+            self.train_dataset,
+            collate_fn=data_collator,
+            sampler=train_sampler,
+            batch_size=batch_size,
+        )
+
+trainer = LengthGroupedTrainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
-    eval_dataset=valid_dataset.take(100),
+    eval_dataset=valid_dataset,
     data_collator=data_collator,
     compute_metrics=compute_metrics,
 )
 
-# 1. Confirm attention_mask is present
-first_batch = next(iter(trainer.get_train_dataloader()))
-print("Batch keys:", first_batch.keys())
-print("Attention mask shape:", first_batch.get("attention_mask"))
-
-# 2. Check for NaN in raw audio
-for name, audio in LOADED_NOISES.items():
-    if np.isnan(audio).any():
-        print(f"NaN in noise file: {name}")
-
-# 3. Check a single mixed sample
-sample = next(iter(train_dataset))
-print("NaN in input_values:", np.isnan(sample["input_values"]).any())
-print("Input range:", np.min(sample["input_values"]), np.max(sample["input_values"]))
-
-
-# --- 7. FINAL BATCH INSPECTION ---
-print("--- DEBUG: Inspecting the first real batch for the model ---")
-dataloader = trainer.get_train_dataloader()
-first_batch = next(iter(dataloader))
-print(f"Batch Inputs Shape: {first_batch['input_values'].shape}")
-print(f"Batch Labels Shape: {first_batch['labels'].shape}")
-print(f"Non-masked labels in first sample: {(first_batch['labels'][0] != -100).sum()}")
-
-if (first_batch['labels'] != -100).sum() == 0:
-    print("!!! CRITICAL: THE ENTIRE BATCH IS MASKED. TRAINING WILL FAIL.")
 
 print("--- Starting Trainer ---")
 trainer.train()
