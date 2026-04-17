@@ -73,6 +73,31 @@ print(f"Train: {len(train_dataset)}, Valid: {len(valid_dataset)}")
 # Since we are using the same vocabulary and the audio files are all 16 kHz, this should be compatible.
 processor = Wav2Vec2Processor.from_pretrained(config["model"]["name"])
 
+def process_on_the_fly(batch):
+    clean = np.array(batch["clean_audio"], dtype=np.float32)
+    text = str(batch["clean_text"]).upper().strip()
+
+    batch["input_values"] = np.array(
+        processor(clean, sampling_rate=16000, return_tensors="np").input_values[0],
+        dtype=np.float32
+    )
+    batch["labels"] = processor.tokenizer(text).input_ids
+    return batch
+
+class CleanDataset(TorchDataset):
+    def __init__(self, base_dataset):
+        self.base = base_dataset
+        self.lengths = [
+            sf.info(s["flac_path"]).frames for s in base_dataset.samples
+        ]
+    def __len__(self):
+        return len(self.base)
+    def __getitem__(self, idx):
+        return process_on_the_fly(self.base[idx])
+
+train_dataset = CleanDataset(train_dataset)
+valid_dataset = CleanDataset(valid_dataset)
+
 batch_size = config["training"]["per_device_train_batch_size"]
 
 
