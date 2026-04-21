@@ -157,8 +157,6 @@ model = Wav2Vec2ForCTC.from_pretrained(
     pad_token_id=processor.tokenizer.pad_token_id,
     ctc_zero_infinity=True
 )
-# no need to further fine tune
-model.freeze_feature_encoder()
 
 # Start training
 training_args = TrainingArguments(
