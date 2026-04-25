@@ -12,7 +12,7 @@
 #SBATCH --time=24:00:00
 
 # SET THE DIRECTORY
-PROJECT_ROOT="/common/users/sk2779/Deep-Learning-Final-Project"
+PROJECT_ROOT=""
 cd "$PROJECT_ROOT"
 
 # Create a virtual environment if it doesn't exist
