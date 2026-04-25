@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# --- SLURM Resource Request ---
+#SBATCH --job-name=complex_train
+#SBATCH --output=logs/complex/train.out
+#SBATCH --error=logs/complex/train.err
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+
+# SET THE DIRECTORY
+PROJECT_ROOT=""
+cd "$PROJECT_ROOT"
+
+# Create a virtual environment if it doesn't exist
+if [ ! -d "venv462" ]; then
+    python3 -m venv venv462
+    source venv462/bin/activate
+    pip install requirements.txt --upgrade
+fi
+
+# Activate the environment
+source venv462/bin/activate
+
+
+# --- 2. Training Execution ---
+echo "Starting training at: $(date)"
+
+# Run with -u to get real-time log updates in your .out file
+python3 "${PROJECT_ROOT}/training/complex.py"
+
+echo "Job finished at: $(date)"

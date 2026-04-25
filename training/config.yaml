@@ -1,0 +1,52 @@
+model:
+  name: "facebook/wav2vec2-base"
+  ctc_loss_reduction: "mean"
+
+dataset:
+  name: "librispeech_asr"
+  subset: "clean"
+  train_split: "train.100"
+  valid_split: "validation"
+  target_sampling_rate: 16000
+
+training:
+  seed: 42
+  types:
+    baseline:
+      output_dir: "results/baseline"
+    static:
+      subfolder: "noises/static"
+      snr_range:
+        min: 10
+        max: 30
+      output_dir: "results/static"
+      prev_model_dir: "results_old/static/checkpoint-20000"
+    complex:
+      subfolder: "noises/complex"
+      snr_range:
+        min: 10
+        max: 30
+      output_dir: "results/complex"
+      prev_model_dir: "results_old/complex/checkpoint-20000"
+    babble:
+      subfolder: "noises/babble"
+      snr_range:
+        min: 10
+        max: 30
+      output_dir: "results/babble"
+      prev_model_dir: "results_old/babble/checkpoint-19750"
+    all:
+      output_dir: "results/all"
+  
+  apply_augmentation: true
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  num_train_epochs: 2
+  learning_rate: 0.00001 # 1e-4
+  max_steps: 28000
+  logging_steps: 50
+  warmup_steps: 1000
+  eval_steps: 500
+  save_steps: 500
+  save_total_limit: 3
+  weight_decay: 0.01
