@@ -14,6 +14,7 @@ Complete the following steps:
   - The training for this project is conducted using slurm system, and the training scripts are located in `training/scripts/`. You can run the training script using the following command:
   ```sbatch training/scripts/baseline.sh```
 3. To see the training results including loss changes and validation results, please refer to the `training/logs/` folder. 
+  - To output the graph of training loss, you can run the jupyter notebook `training/logs/graph.ipynb`. This would allow you to upload an output log file and visualize the training loss changes.
 
 
 ## Evaluation
