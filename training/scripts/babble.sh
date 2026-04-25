@@ -16,9 +16,9 @@ PROJECT_ROOT=""
 cd "$PROJECT_ROOT"
 
 # Create a virtual environment if it doesn't exist
-if [ ! -d "venv462" ]; then
-    python3 -m venv venv462
-    source venv462/bin/activate
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+    source venv/bin/activate
     pip install requirements.txt --upgrade
 fi
 
