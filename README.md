@@ -18,7 +18,30 @@ Complete the following steps:
 
 
 ## Evaluation
- 
+We evaluate our models using controlled benchmark noise settings based on the LibriSpeech dataset.
+
+### Metrics
+We use:
+- Character Error Rate (CER) as the main metric to measure transcription accuracy
+- Word Error Rate (WER) as a secondary reference
+
+### Benchmark Noise Evaluation
+We test model performance by adding different types of noise to clean LibriSpeech audio:
+- Noise types:
+  - stationary (e.g., air conditioner)
+  - non-stationary (e.g., environmental sounds)
+  - multi-speaker (babble noise)
+- SNR levels:
+  - 20 dB, 10 dB, 0 dB
+
+This setup allows us to compare how different noise types and noise levels affect model performance under controlled conditions.
+
+### Training Strategy Evaluation
+We also compare models trained under different settings:
+- clean-trained models
+- noise-trained models (e.g., multispeaker noise)
+
+This helps us analyze how training with noise improves robustness, especially under matching noise conditions.
 
 
 ## Results
