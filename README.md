@@ -46,3 +46,82 @@ This helps us analyze how training with noise improves robustness, especially un
 
 ## Results
 
+### SNR Impact
+We observe a clear trend across all experiments: as the signal-to-noise ratio (SNR) decreases, model performance degrades significantly.
+
+- Higher SNR (e.g., 20 dB) → better recognition performance  
+- Lower SNR (e.g., 0 dB) → much higher CER and WER  
+- Performance drop is most severe under multi-speaker noise  
+
+This confirms that speech recognition models are highly sensitive to noise intensity, especially when the noise overlaps with speech content.
+
+---
+
+### Noise Type Comparison
+Different noise types affect the model in very different ways:
+
+- **Stationary noise** (e.g., air conditioner, fan)  
+  → minimal impact  
+  → model handles this type of noise relatively well  
+
+- **Non-stationary noise** (e.g., environmental sounds, traffic)  
+  → moderate performance degradation  
+  → variability makes it harder to filter  
+
+- **Multi-speaker noise (babble)**  
+  → most severe degradation  
+  → competing speech signals are hardest to distinguish  
+
+Overall, noise that resembles speech has the largest negative impact on recognition accuracy.
+
+---
+
+### Training Strategy Impact
+We compare models trained under different conditions:
+
+- **Clean-trained models**  
+  → perform well on clean data  
+  → limited robustness improvement under noisy conditions  
+
+- **Noise-trained models (e.g., multi-speaker training)**  
+  → improved performance under matching noise conditions  
+  → little to no degradation on clean data  
+
+This suggests that **training and testing noise alignment is critical** for robustness.
+
+---
+
+### Key Findings
+- Not all noise types are equally difficult  
+- Multi-speaker noise is the most challenging  
+- Stationary noise is the easiest to handle  
+- Noise-aware training improves robustness, but mainly under matched conditions  
+
+---
+
+### Limitations
+
+Despite the promising results, several limitations should be noted:
+
+- **Model capacity and training duration**  
+  Models are relatively small and trained for limited steps due to computational constraints. Larger models and longer training may improve performance.
+
+- **Limited diversity of noise types**  
+  The noise samples used may not fully represent real-world acoustic complexity.
+
+- **Synthetic evaluation setup**  
+  Noise is artificially added to clean speech, which may not perfectly reflect real-world environments.
+
+---
+
+### Conclusion
+
+This project shows that the impact of noise on speech recognition depends strongly on the type of noise, not just its intensity.
+
+In particular:
+- Stationary noise is easier for models to handle  
+- Multi-speaker noise remains a major challenge  
+- Training with specific noise types improves robustness under matching conditions  
+
+These findings suggest that **carefully designed data augmentation strategies are essential for real-world speech recognition systems**, especially when computational resources are limited.
+
